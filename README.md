@@ -1,28 +1,38 @@
 # fusion-core
 
-Fusion 生态公共技术底座。纯技术零业务——LLM 客户端、JSON 解析、配置、日志、FastAPI 工厂、prompt 管理。被各 Python 领域项目共享，消除 7+ 套重复 LLM 客户端与 10+ 份 `_parse_json`。
+> Shared technical foundation for the Fusion ecosystem. Pure-tech, zero business logic.
+>
+> [中文文档](README_CN.md)
 
-## 安装
+fusion-core is the common technical base shared by the 20+ Python domain projects in the Fusion ecosystem ("一核九端"). It eliminates 7+ duplicate LLM clients and 10+ copies of `_parse_json` by providing one well-tested implementation of each primitive: an LLM client, JSON parsing, config loading, logging, an httpx connection pool with retry, a FastAPI factory, and prompt-template management.
+
+It depends on nothing Fusion-specific. `import fusion_core` triggers no I/O (no env read, no file read, no network connection) — safe to import anywhere.
+
+## Install
 
 ```bash
-pip install -e fusion-core          # 基础（仅 httpx，核心依赖零业务、零 pydantic）
-pip install -e "fusion-core[test]"  # 加测试栈
-pip install -e "fusion-core[fastapi]"  # 加 fastapi + uvicorn + pydantic
+pip install -e fusion-core            # core (httpx only; zero business deps, no pydantic)
+pip install -e "fusion-core[test]"    # + test stack (pytest, ruff, fastapi)
+pip install -e "fusion-core[fastapi]" # + fastapi, uvicorn, pydantic
 ```
 
-## 7 模块速查
+Requirements: Python >=3.12.
 
-| 模块 | 关键符号 | 用途 |
-|------|----------|------|
-| `mlx_client` | `FusionMLXClient`、`create_async_client(*, backend=)`、`LLMResponse`、`EmbeddingResponse`、`ServerStats` | 统一 MLX 推理客户端（chat/embedding/stream），默认 base_url `localhost:11434`（运行时解析 `FUSION_MLX_URL`，指向 fusion-gateway 即多节点），重试下沉 `http_client`。`chat(**kwargs)` 白名单透传（`top_p`/`seed`/`total_deadline` 等）；`stream_chat` 中断抛 `StreamError(delivered=, resume_offset=)`；`create_async_client(model=...)` 记默认 model；`health()` 复用 `probe_client` + 1s 节流不泄漏主连接；`get_server_stats()` 返回 `ServerStats` dataclass |
-| `parse` | `parse_llm_json`（抛 `ParseError` 不兜底）、`parse_llm_json_safe`（显式默认，default 必传 dict/list）、`parse_llm_json_lenient`（`raw_decode` 提取首个对象，扫描上限 200k）、`strip_code_fence` | LLM 输出 JSON 解析，**失败可见不静默** |
-| `config` | `load_settings`（mtime 失效缓存）、`resolve_api_key`、`load_api_key`、`get_env`、`default_mlx_base_url`、`clear_cache` | 配置懒加载 + api_key 解析 + 缓存清理（settings 文件 mtime 变即失效） |
-| `logging` | `setup_logging`、`get_logger` | 幂等日志初始化（每次 setLevel 生效，`propagate` 默认 True 不阻断 host root，区分包级 `NullHandler`），JSON 格式可选 |
-| `http_client` | `get_async_client`（per-loop 连接池，`OrderedDict` LRU 上限 8，驱逐只动同 loop 键）、`with_retry`（full jitter，`disable=` 关重试交 gateway 熔断，`total_deadline=` 总预算；耗尽抛 `RetryExhaustedError`/`RetryTimeoutError`）、`close_all`、`close_all_sync` | httpx async 客户端池 + 重试（重试码/异常单一来源 `RETRY_STATUS`/`RETRY_EXCEPTIONS`） |
-| `http` | `create_app`、`install_auth` | FastAPI 应用工厂 + 纯 ASGI 中间件（request_id 最外层，SSE 不截断；认证密钥封进中间件实例不落 `app.state`；422/500 同等脱敏；白名单路径 `rstrip` 规范化） |
-| `prompt` | `PromptManager` | prompt 模板管理（只管引擎不含领域内容，缺失目录直接抛 `FileNotFoundError`；**永久缓存**——模板按不可变运行资产，运行期改盘不生效，需 hot-reload 仿 `config.load_settings` 加 mtime） |
+## 7 modules at a glance
 
-## 用法示例
+| Module | Key symbols | Purpose |
+|--------|-------------|---------|
+| `mlx_client` | `FusionMLXClient`, `create_async_client(*, backend=)`, `LLMResponse`, `EmbeddingResponse`, `ServerStats`, `StreamError` | Unified MLX inference client (chat / embedding / stream). Default base_url `localhost:11434` (resolved at runtime from `FUSION_MLX_URL`; point it at fusion-gateway for multi-node). Retry delegated to `http_client`. `chat(**kwargs)` allowlist-passes (`top_p`/`seed`/`total_deadline` etc.); `stream_chat` raises `StreamError(delivered=, resume_offset=)` on mid-stream failure; `create_async_client(model=...)` records a default model; `health()` reuses a `probe_client` with 1s throttle (no main-connection leak); `get_server_stats()` returns a `ServerStats` dataclass |
+| `parse` | `parse_llm_json` (raises `ParseError`, no fallback), `parse_llm_json_safe` (explicit `default` required, must be dict/list), `parse_llm_json_lenient` (`raw_decode` extracts first object, scan cap 200k), `strip_code_fence` | Parse JSON from LLM output. **Failures are visible, never silent** |
+| `config` | `load_settings` (mtime-invalidated cache), `resolve_api_key`, `load_api_key`, `get_env`, `default_mlx_base_url`, `clear_cache` | Lazy config load + api_key resolution + cache invalidation (settings file mtime change → cache miss) |
+| `logging` | `setup_logging`, `get_logger` | Idempotent logging init (every `setLevel` applies; `propagate` defaults True so host root still receives logs; package-level `NullHandler` for library mode). Optional JSON format |
+| `http_client` | `get_async_client` (per-loop connection pool, `OrderedDict` LRU cap 8, evicts only same-loop keys), `with_retry` (full jitter; `disable=` to hand retry off to gateway circuit breaker; `total_deadline=` end-to-end budget; exhausted → `RetryExhaustedError` / `RetryTimeoutError`), `close_all`, `close_all_sync`, `set_metrics_callback`, `get_metrics_snapshot`, `reset_metrics` | httpx async client pool + retry. Single source of truth for retry codes/exceptions: `RETRY_STATUS` / `RETRY_EXCEPTIONS` |
+| `http` | `create_app`, `install_auth`, `standard_error_handler` | FastAPI app factory + pure-ASGI middleware (request_id outermost, SSE not truncated; auth keys encapsulated in the middleware instance, never on `app.state`; 422 and 500 sanitized equally; whitelist paths `rstrip`-normalized) |
+| `prompt` | `PromptManager` | Prompt-template management (engine only, no domain content; missing dir raises `FileNotFoundError`; **permanent cache** — templates are immutable runtime assets, on-disk edits not picked up at runtime; if hot-reload is ever needed, gate on mtime like `config.load_settings`) |
+
+## Usage
+
+### LLM chat + JSON parse
 
 ```python
 from fusion_core import create_async_client, parse_llm_json, get_logger
@@ -34,93 +44,134 @@ client = create_async_client(
     api_key="...",
     model="qwen2.5-7b",
 )
-resp = await client.chat(messages=[{"role": "user", "content": "返回 JSON"}])
-data = parse_llm_json(resp.content)  # 非法 JSON 抛 ParseError，不静默返回空
+resp = await client.chat(messages=[{"role": "user", "content": "Return JSON"}])
+data = parse_llm_json(resp.content)  # invalid JSON raises ParseError, not silent {}
 ```
 
-## 采用项目
-
-| 项目 | 采用情况 | 入口 |
-|------|----------|------|
-| fusion-finance | ✅ 已采用 | `ai_client.py` (17 处) |
-| fusion-k12-teacher | ✅ 已采用 | `ai_client.py` (11 处) |
-| fusion-cowork | ✅ 已采用 | — |
-| 其余 18 Python 项目 | ❌ 自建 LLM 客户端 | 待迁移（见下） |
-
-## 迁移指引（自建客户端 → fusion-core）
-
-待迁移项目（裸 `httpx` 直连 MLX，无重试/超时/指标）：
-`fusion-health`、`fusion-science`、`fusion-rag`、`fusion-simulation`、`fusion-code-modenization`、`fusion-security`、`fusion-trainer`
-
-迁移步骤（每项目独立 PR，见 `architecture/venv-fix-0823.md` §5）：
-
-1. `httpx.AsyncClient.post(.../chat/completions)` → `create_async_client(...)` + `await client.chat(...)`
-2. 自建 `_parse_json` → `parse_llm_json`（失败抛错，不兜底 `return {}`）
-3. 不传 base_url 即用 fusion-core 默认 `localhost:11434/v1`（与 fusion-mlx `start.sh` 实际端口对齐，非网关）
-4. 静默降级 `return LLMResult(content="", error=...)` → 抛错（治审计 D-H3 静默失败）
+### Streaming (with mid-stream recovery envelope)
 
 ```python
-# 迁移前（health llm_gateway.py 静默失败）
+collected = []
 try:
-    resp = await client.post(f"{url}/chat/completions", ...)
-    return LLMResult(content=resp.json()["choices"][0]["message"]["content"])
-except Exception as e:
-    return LLMResult(content="", error=str(e))  # 静默！下游按空继续
-
-# 迁移后
-from fusion_core import create_async_client
-
-self._client = create_async_client(base_url=url, api_key=key, model=model)
-result = await self._client.chat(messages=messages)  # 失败抛异常
-return LLMResult(content=result.content, model=result.model)
+    async for chunk in client.stream_chat(messages=[...]):
+        collected.append(chunk)
+except StreamError as e:
+    # partial output already delivered; e.delivered / e.resume_offset tell you how much
+    log.warning("stream severed after %d chars, resume at %d", e.delivered, e.resume_offset)
 ```
 
-## 设计原则
+### End-to-end deadline
 
-- **纯技术零业务**：不含 K12 评分/金融阈值/医疗禁忌/DAG 节点等领域逻辑。边界模糊默认不抽入。
-- **非侵入可独立**：fusion-core 可独立 `import` 不依赖任何 fusion-* 项目。
-- **失败可见不兜底**：`parse_llm_json` 抛错而非返回空 dict；client 失败抛异常而非返回空 content；`get_server_stats` 失败抛异常不返回 `{}`。
-- **测试可隔离**：`-m 'not integration'` 跳过真实引擎测试；集成 fixture 记录 `was_running`，仅停自己启动的引擎。
+```python
+# total_deadline caps the whole retry budget, not just one request
+resp = await client.chat(messages=[...], total_deadline=30.0)
+```
 
-## PRD §7.1 验收对照（实测，非声明）
+### Hand retry off to fusion-gateway (avoid double-retry)
 
-| 验收项 | 状态 | 实测依据 |
-|--------|------|----------|
-| `import fusion_core` 不触发任何 I/O（不读 env/文件/连接） | ✅ 达标 | `mlx_client` 删除模块级 `os.environ.get`，运行时调 `default_mlx_base_url()`；`tests/test_config.py::TestImportTimeIsolation` 用 env-get spy 守护 |
-| grep 源码无 `or {}` / `or []` / `or ""` 静默兜底 | ✅ 达标 | `resolve_api_key` 删 `or ""`；`get_server_stats` 失败抛错不 `return {}` |
-| LLM 客户端不含重试逻辑（单一职责） | ✅ 达标 | `mlx_client.chat` 路由 `http_client.with_retry`；重试码/异常单一来源 `RETRY_STATUS`/`RETRY_EXCEPTIONS` |
-| 集成测试访问 11434（PRD §7.1） | ✅ 达标 | `DEFAULT_MLX_PORT = 11434`，对齐 fusion-mlx `start.sh`；集成 fixture `was_running` 不误杀用户引擎 |
-| CORS `*`+credentials 拒绝 | ✅ 达标 | `create_app(cors_origins=["*"], cors_credentials=True)` 抛 `ValueError`；credentials 默认 False |
+```python
+from fusion_core import with_retry
+# when fusion-gateway's circuit breaker owns retry, disable core's own retry
+resp = await with_retry(fn, disable=True)
+```
 
-## FastAPI 工厂用法
+### FastAPI factory
 
 ```python
 from fusion_core.http import create_app, install_auth
 
-# cors_credentials 默认 False；传 "*" 必须关 credentials，否则抛 ValueError
+# cors_credentials defaults False; "*" with credentials=True raises ValueError
 app = create_app("my-svc", cors_origins=["https://example.com"], cors_credentials=True)
-install_auth(app, api_keys=["secret"])  # request_id 自动为最外层中间件，401 也带 id
+install_auth(app, api_keys=["secret"])  # request_id is outermost middleware; 401 also carries it
 ```
 
-## 边界声明（集群能力归 fusion-gateway）
+### Embeddings
 
-fusion-core 是**单进程单引擎客户端库**，不是集群治理面。PRD §0.2 四铁律（纯技术零业务 / 非侵入可独立 / 失败可见不兜底 / 测试可隔离）划定边界：下列集群级能力**已在 fusion-gateway（Go，:11432）实现并上线，core 不重建**（重建即重复 + 违反"纯技术零业务"）。core 侧只做"避免与 gateway 行为冲突"的最小修复。
+```python
+resp = await client.embed("hello world", model="bge-m3")
+print(resp.vector)        # single input → .vector
+batch = await client.embed(["a", "b"], model="bge-m3")
+print(batch.vectors)      # batch input → .vectors list
+```
 
-| 能力 | gateway 实现 | core 侧动作 |
-|------|-------------|-----------|
-| 端点注册表 / 路由 / 故障转移 | `discovery`（节点注册/健康/驱逐）+ `router/engine` | `default_mlx_base_url()` 读 `FUSION_MLX_URL`，指向 gateway 即多节点 |
-| 熔断器 | `middleware/retry` RetryChat | `with_retry(disable=True)` 关 core 重试，交 gateway 熔断，避免双重重试 |
-| 每端点并发度闸门 | `middleware/budget` BudgetBlock | core 连接池不叠加并发上限 |
-| 模型注册表 model→endpoint | `router` 按 model 路由 | 调用方传 model，gateway 解析端点，core 不持拓扑 |
-| 指标埋点 Prometheus | `observability/metrics`（circuitBreakerState/Trips、routeDecisions、requestDuration、requestTotal） | core 不重复埋点（`http_client` metrics 回调保留供单进程场景） |
-| Agent 调度（槽位/队列/取消） | 路由层并发治理 | 调度属业务编排，归 fusion-cowork / agent-studio |
+## Design principles
 
-**多节点接入**：`export FUSION_MLX_URL=http://<gateway-host>:11432/v1`，core 即打到 gateway，gateway 负责路由到集群节点。core 自身永远是单 `base_url` 视角。
+- **Pure tech, zero business**: no K12 grading, no finance thresholds, no medical contraindications, no DAG nodes. When a boundary is blurry, it stays out.
+- **Non-invasive, standalone**: `fusion_core` imports on its own, depends on no other fusion-* project.
+- **Fail visibly, no fallbacks**: `parse_llm_json` raises instead of returning `{}`; client failure raises instead of returning empty content; `get_server_stats` failure raises instead of returning `{}`.
+- **Tests are isolatable**: `-m 'not integration'` skips real-engine tests; integration fixtures record `was_running` and only stop engines they started.
 
-详见 `../audit/fusion-core-audit-report-0824.md` §六 落地状态。
+## Boundary declaration — cluster capabilities belong to fusion-gateway
 
-## 相关
+fusion-core is a **single-process, single-engine client library**, not a cluster control plane. The PRD §0.2 four iron rules (pure tech / non-invasive / fail-visible / isolatable tests) draw the boundary. The cluster-level capabilities below are **already implemented and live in fusion-gateway (Go, :11432)** — core does not rebuild them (rebuilding = duplication + violates "pure tech, zero business"). Core only does the minimal "don't conflict with gateway behavior" fixes.
 
-- 修复方案：`../architecture/venv-fix-0823.md` §5（客户端推广）
-- PRD：`../architecture/fusion-core-prd-0823.md`（修正：已存在需推广，非 greenfield）
-- 审计：`../audit/fusion-audit-all-report.md` 第四章 Q1
+| Capability | gateway implementation | core action |
+|------------|------------------------|-------------|
+| Endpoint registry / routing / failover | `discovery` (node register/health/evict) + `router/engine` | `default_mlx_base_url()` reads `FUSION_MLX_URL`; point at gateway for multi-node |
+| Circuit breaker | `middleware/retry` RetryChat | `with_retry(disable=True)` disables core retry, hands to gateway breaker, avoids double-retry |
+| Per-endpoint concurrency gate | `middleware/budget` BudgetBlock | core pool adds no concurrency cap |
+| Model registry model→endpoint | `router` routes by model | caller passes model, gateway resolves endpoint; core holds no topology |
+| Metrics (Prometheus) | `observability/metrics` (circuitBreakerState/Trips, routeDecisions, requestDuration, requestTotal) | core does not double-instrument (`http_client` metrics callback kept for single-process use) |
+| Agent scheduling (slots/queue/cancel) | routing-layer concurrency governance | scheduling is business orchestration → fusion-cowork / agent-studio |
+
+**Multi-node access**: `export FUSION_MLX_URL=http://<gateway-host>:11432/v1` — core then hits the gateway, which routes to cluster nodes. Core itself is always a single `base_url` view.
+
+See `audit/fusion-core-audit-report-0824.md` §六 for the landing state.
+
+## Migration guide (self-built client → fusion-core)
+
+Projects still on bare `httpx` to MLX (no retry/timeout/metrics): `fusion-health`, `fusion-science`, `fusion-rag`, `fusion-simulation`, `fusion-code-modelization`, `fusion-security`, `fusion-trainer`.
+
+Steps (one PR per project, see `architecture/venv-fix-0823.md` §5):
+
+1. `httpx.AsyncClient.post(.../chat/completions)` → `create_async_client(...)` + `await client.chat(...)`
+2. Self-built `_parse_json` → `parse_llm_json` (raises on failure, not `return {}`)
+3. No `base_url` → uses core default `localhost:11434/v1` (aligned with fusion-mlx `start.sh`, not the gateway)
+4. Silent degrade `return LLMResult(content="", error=...)` → raise (fixes audit D-H3 silent failure)
+
+```python
+# Before (health llm_gateway.py silent failure)
+try:
+    resp = await client.post(f"{url}/chat/completions", ...)
+    return LLMResult(content=resp.json()["choices"][0]["message"]["content"])
+except Exception as e:
+    return LLMResult(content="", error=str(e))  # silent! downstream proceeds on empty
+
+# After
+from fusion_core import create_async_client
+
+self._client = create_async_client(base_url=url, api_key=key, model=model)
+result = await self._client.chat(messages=messages)  # raises on failure
+return LLMResult(content=result.content, model=result.model)
+```
+
+## PRD §7.1 acceptance (measured, not declared)
+
+| Acceptance item | Status | Evidence |
+|-----------------|--------|----------|
+| `import fusion_core` triggers no I/O (no env/file/conn) | ✅ | `mlx_client` dropped module-level `os.environ.get`; resolves `default_mlx_base_url()` at call time; `tests/test_config.py::TestImportTimeIsolation` guards with env-get spy |
+| grep source has no `or {}` / `or []` / `or ""` silent fallback | ✅ | `resolve_api_key` dropped `or ""`; `get_server_stats` raises, not `return {}` |
+| LLM client holds no retry logic (single responsibility) | ✅ | `mlx_client.chat` routes to `http_client.with_retry`; single source `RETRY_STATUS`/`RETRY_EXCEPTIONS` |
+| Integration tests hit 11434 (PRD §7.1) | ✅ | `DEFAULT_MLX_PORT = 11434`, aligned with fusion-mlx `start.sh`; integration fixture `was_running` doesn't kill user's engine |
+| CORS `*`+credentials rejected | ✅ | `create_app(cors_origins=["*"], cors_credentials=True)` raises `ValueError`; credentials defaults False |
+
+## Testing
+
+```bash
+pytest tests/ -m "not integration"   # unit: 156 passed, 1 skipped
+pytest tests/ -m integration          # real fusion-mlx engine (starts/stops its own)
+ruff check . && ruff format --check . # lint clean
+```
+
+## Documentation
+
+- [中文文档 (Chinese)](README_CN.md)
+- Module reference: [`docs/`](docs/) — per-module API signatures, params, returns, exceptions, examples
+- Audit: `../audit/fusion-core-audit-report-0824.md` — 28 findings, 21 core fixes + 7 boundary declarations
+- PRD: `../architecture/fusion-core-prd-0823.md`
+
+## Related
+
+- Fix plan: `../architecture/venv-fix-0823.md` §5 (client rollout)
+- Audit: `../audit/fusion-audit-all-report.md` Chapter 4 Q1
+- License: Apache-2.0
