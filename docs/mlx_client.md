@@ -155,7 +155,7 @@ async def health(self) -> bool
 async def get_server_stats(self) -> ServerStats
 ```
 
-`GET /stats` (5s timeout) → `ServerStats.from_dict(resp.json())` (I12). Raises on HTTP error (no silent `{}`).
+`GET /stats` at the **server root** (not `/v1/stats`) — fusion-mlx exposes OpenAI routes under `/v1` but server stats is a fusion-mlx extension at `/`. The client strips the `/v1` suffix from `base_url` to reach root, builds a short-lived client, fetches `/stats` (5s timeout), closes it, then `ServerStats.from_dict(resp.json())` (I12). Raises on HTTP error (no silent `{}`). HTTP error path logs the status + root URL so a misconfigured endpoint is observable.
 
 ## create_async_client
 

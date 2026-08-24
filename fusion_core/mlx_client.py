@@ -376,9 +376,29 @@ class FusionMLXClient:
         return ok
 
     async def get_server_stats(self) -> ServerStats:
-        resp = await self.client.get("/stats", timeout=5.0)
-        resp.raise_for_status()
-        return ServerStats.from_dict(resp.json())
+        # fusion-mlx exposes /stats at root (not /v1/stats): OpenAI routes live
+        # under /v1, but server stats is a fusion-mlx extension at /. self.client
+        # carries base_url ending in /v1, so strip the /v1 suffix to reach root.
+        root_url = self.base_url
+        if root_url.endswith("/v1"):
+            root_url = root_url[: -len("/v1")]
+        elif root_url.endswith("/v1/"):
+            root_url = root_url[: -len("/v1/")]
+        stats_client = httpx.AsyncClient(
+            base_url=root_url,
+            timeout=5.0,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            transport=self.transport,
+        )
+        try:
+            resp = await stats_client.get("/stats")
+            resp.raise_for_status()
+            return ServerStats.from_dict(resp.json())
+        except httpx.HTTPStatusError as exc:
+            logger.warning("get_server_stats /stats returned %s on %s", exc.response.status_code, root_url)
+            raise
+        finally:
+            await stats_client.aclose()
 
 
 def create_async_client(
