@@ -37,7 +37,9 @@ def _metrics_label(resp: httpx.Response | None, exc: Exception | None) -> str:
 
 
 def _bump_metrics(label: str, *, latency_s: float, status: int, retries: int, error: str | None) -> None:
-    bucket = _metrics.setdefault(label, {"calls": 0, "errors": 0, "retries": 0, "total_latency_s": 0.0, "last_status": 0})
+    bucket = _metrics.setdefault(
+        label, {"calls": 0, "errors": 0, "retries": 0, "total_latency_s": 0.0, "last_status": 0}
+    )
     bucket["calls"] = int(bucket["calls"]) + 1
     bucket["retries"] = int(bucket["retries"]) + retries
     bucket["total_latency_s"] = float(bucket["total_latency_s"]) + latency_s
@@ -46,13 +48,15 @@ def _bump_metrics(label: str, *, latency_s: float, status: int, retries: int, er
         bucket["errors"] = int(bucket["errors"]) + 1
     if _metrics_callback is not None:
         try:
-            _metrics_callback({
-                "label": label,
-                "latency_s": latency_s,
-                "status": status,
-                "retries": retries,
-                "error": error,
-            })
+            _metrics_callback(
+                {
+                    "label": label,
+                    "latency_s": latency_s,
+                    "status": status,
+                    "retries": retries,
+                    "error": error,
+                }
+            )
         except Exception:
             logger.debug("metrics_callback raised, swallowed to avoid breaking with_retry", exc_info=True)
 
@@ -162,7 +166,9 @@ async def with_retry(
             if total_deadline is not None:
                 elapsed = loop.time() - started
                 if elapsed >= total_deadline:
-                    logger.warning("with_retry total_deadline=%.2fs exceeded before attempt %d", total_deadline, attempt + 1)
+                    logger.warning(
+                        "with_retry total_deadline=%.2fs exceeded before attempt %d", total_deadline, attempt + 1
+                    )
                     raise RetryTimeoutError(f"with_retry total_deadline {total_deadline}s exceeded")
             try:
                 resp = await fn()
@@ -174,8 +180,12 @@ async def with_retry(
                         if total_deadline is not None:
                             elapsed = loop.time() - started
                             if elapsed + delay >= total_deadline:
-                                logger.warning("with_retry total_deadline=%.2fs would exceed on sleep, aborting", total_deadline)
-                                raise RetryTimeoutError(f"with_retry total_deadline {total_deadline}s exceeded during backoff")
+                                logger.warning(
+                                    "with_retry total_deadline=%.2fs would exceed on sleep, aborting", total_deadline
+                                )
+                                raise RetryTimeoutError(
+                                    f"with_retry total_deadline {total_deadline}s exceeded during backoff"
+                                )
                         logger.warning(
                             "with_retry HTTP %s, retry %d/%d in %.2fs", resp.status_code, attempt + 1, retries, delay
                         )
@@ -189,7 +199,13 @@ async def with_retry(
                         f"with_retry exhausted: HTTP {resp.status_code}", request=resp.request, response=resp
                     )
                 latency = loop.time() - started
-                _bump_metrics(_metrics_label(resp, None), latency_s=latency, status=resp.status_code, retries=_retries_used, error=None)
+                _bump_metrics(
+                    _metrics_label(resp, None),
+                    latency_s=latency,
+                    status=resp.status_code,
+                    retries=_retries_used,
+                    error=None,
+                )
                 return resp
             except RETRY_EXCEPTIONS as exc:
                 last_exc = exc
@@ -199,8 +215,12 @@ async def with_retry(
                     if total_deadline is not None:
                         elapsed = loop.time() - started
                         if elapsed + delay >= total_deadline:
-                            logger.warning("with_retry total_deadline=%.2fs would exceed on sleep, aborting", total_deadline)
-                            raise RetryTimeoutError(f"with_retry total_deadline {total_deadline}s exceeded during backoff") from exc
+                            logger.warning(
+                                "with_retry total_deadline=%.2fs would exceed on sleep, aborting", total_deadline
+                            )
+                            raise RetryTimeoutError(
+                                f"with_retry total_deadline {total_deadline}s exceeded during backoff"
+                            ) from exc
                     logger.warning(
                         "with_retry attempt %d/%d failed: %s, retrying in %.2fs", attempt + 1, retries, exc, delay
                     )
@@ -212,11 +232,23 @@ async def with_retry(
         raise RuntimeError("with_retry exhausted without response or exception")
     except RetryExhaustedError as exc:
         latency = loop.time() - started
-        _bump_metrics(_metrics_label(_last_resp, None), latency_s=latency, status=_last_resp.status_code if _last_resp else 0, retries=_retries_used, error="retry_exhausted")
+        _bump_metrics(
+            _metrics_label(_last_resp, None),
+            latency_s=latency,
+            status=_last_resp.status_code if _last_resp else 0,
+            retries=_retries_used,
+            error="retry_exhausted",
+        )
         raise exc from exc
     except (*RETRY_EXCEPTIONS, RetryTimeoutError, RuntimeError) as exc:
         latency = loop.time() - started
-        _bump_metrics(_metrics_label(_last_resp, exc), latency_s=latency, status=_last_resp.status_code if _last_resp else 0, retries=_retries_used, error=type(exc).__name__)
+        _bump_metrics(
+            _metrics_label(_last_resp, exc),
+            latency_s=latency,
+            status=_last_resp.status_code if _last_resp else 0,
+            retries=_retries_used,
+            error=type(exc).__name__,
+        )
         raise exc from exc
 
 

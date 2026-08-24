@@ -16,6 +16,10 @@ class PromptManager:
         self.prompts_dir = Path(prompts_dir)
         if not self.prompts_dir.is_dir():
             raise FileNotFoundError(f"prompts_dir not a directory: {self.prompts_dir}")
+        # Permanent in-memory cache: first read of a template wins; later on-disk
+        # edits are NOT picked up for the lifetime of this PromptManager instance.
+        # Prompt templates are treated as immutable runtime assets. If hot-reload
+        # is ever needed, gate this on mtime like config.load_settings (R1).
         self._cache: dict[str, str] = {}
 
     def _resolve(self, name: str) -> Path:
