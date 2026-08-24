@@ -44,7 +44,7 @@ class TestPool:
         get_async_client("http://h0/v1")
         http_client._evict_lru()
         keys = [k.split(":", 1)[1] for k in http_client._client_pool]
-        assert "http://h0/v1" in keys, "LRU must keep recently-used h0, evict coldest instead"
+        assert any(k.startswith("http://h0/v1") for k in keys), "LRU must keep recently-used h0, evict coldest instead"
         await close_all()
 
     async def test_closed_client_not_reused(self):
@@ -57,9 +57,25 @@ class TestPool:
 
     async def test_per_loop_key_isolation(self):
         await close_all()
-        key_a = http_client._pool_key("http://x/v1")
-        assert key_a.endswith("http://x/v1")
+        key_a = http_client._pool_key("http://x/v1", 120.0)
+        assert "http://x/v1" in key_a
+        assert key_a.endswith("120.0")
         assert http_client._loop_id() == id(__import__("asyncio").get_running_loop())
+        await close_all()
+
+    async def test_different_timeout_separate_clients(self):
+        # #16: timeout must be part of the pool key, else first-call-wins pins
+        # the pool to the first caller's timeout and starves a later caller
+        # needing more time.
+        await close_all()
+        c30 = get_async_client("http://t/v1", timeout=30.0)
+        c60 = get_async_client("http://t/v1", timeout=60.0)
+        assert c30 is not c60, "different timeouts must get distinct pooled clients (#16)"
+        assert c30.timeout.read == 30.0
+        assert c60.timeout.read == 60.0
+        # same timeout still reuses (no pool explosion)
+        c30b = get_async_client("http://t/v1", timeout=30.0)
+        assert c30b is c30
         await close_all()
 
     def test_close_all_sync_no_loop(self):

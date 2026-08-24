@@ -162,7 +162,7 @@ return LLMResult(content=result.content, model=result.model)
 ## 测试
 
 ```bash
-pytest tests/ -m "not integration"   # 单元：164 passed, 1 skipped（环境相关）
+pytest tests/ -m "not integration"   # 单元：165 passed, 1 skipped（环境相关）
 pytest tests/ -m integration          # 真实 fusion-mlx 引擎：7 passed, 0 skipped
 ruff check . && ruff format --check . # lint clean
 ```

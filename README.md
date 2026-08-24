@@ -164,7 +164,7 @@ return LLMResult(content=result.content, model=result.model)
 ## Testing
 
 ```bash
-pytest tests/ -m "not integration"   # unit: 164 passed, 1 skipped (env-only)
+pytest tests/ -m "not integration"   # unit: 165 passed, 1 skipped (env-only)
 pytest tests/ -m integration          # real fusion-mlx engine: 7 passed, 0 skipped
 ruff check . && ruff format --check . # lint clean
 ```

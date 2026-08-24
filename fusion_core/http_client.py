@@ -100,8 +100,12 @@ def _loop_id() -> int:
         return 0
 
 
-def _pool_key(base_url: str) -> str:
-    return f"{_loop_id()}:{base_url.rstrip('/')}"
+def _pool_key(base_url: str, timeout: float) -> str:
+    # timeout in the key: without it, the first caller's timeout wins and is
+    # reused by every later caller on that pool entry — a caller needing a
+    # longer timeout (e.g. reduce phase 60s) can be starved by an earlier
+    # short-timeout caller (map phase 30s) that hit the pool first (#16).
+    return f"{_loop_id()}:{base_url.rstrip('/')}:{timeout!r}"
 
 
 def _evict_lru() -> None:
@@ -134,7 +138,7 @@ def get_async_client(
     headers: dict | None = None,
 ) -> httpx.AsyncClient:
     base = base_url.rstrip("/")
-    key = _pool_key(base)
+    key = _pool_key(base, timeout)
     client = _client_pool.get(key)
     if client is not None and not client.is_closed:
         _client_pool.move_to_end(key)
