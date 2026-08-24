@@ -16,6 +16,8 @@ if not _logger.handlers:
 
 from fusion_core.config import (  # noqa: E402
     clear_cache,
+    default_gateway_base_url,
+    default_mlx_base_url,
     get_env,
     load_api_key,
     load_settings,
@@ -23,6 +25,7 @@ from fusion_core.config import (  # noqa: E402
 )
 from fusion_core.http_client import (  # noqa: E402
     close_all,
+    gateway_circuit_breaker_ok,
     get_async_client,
     get_metrics_snapshot,
     reset_metrics,
@@ -57,6 +60,8 @@ __all__ = [
     "resolve_api_key",
     "load_settings",
     "clear_cache",
+    "default_mlx_base_url",
+    "default_gateway_base_url",
     "get_logger",
     "setup_logging",
     "FusionMLXClient",
@@ -65,6 +70,7 @@ __all__ = [
     "create_async_client",
     "get_async_client",
     "with_retry",
+    "gateway_circuit_breaker_ok",
     "close_all",
     "set_metrics_callback",
     "get_metrics_snapshot",

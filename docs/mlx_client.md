@@ -17,7 +17,11 @@ class StreamError(RuntimeError):
     resume_offset: int  # where to resume (== delivered for char streams)
 ```
 
-Raised by `stream_chat` when a stream fails **after** partial output was already delivered (R4). Pre-output failures re-raise the original exception (retryable). The envelope lets a caller decide: discard-and-regenerate, or resume from `resume_offset`.
+Raised by `stream_chat` for **all** stream-failure outcomes — the single stream-failure type a caller must handle (H4/R4). Cases:
+
+- Failure **after** partial output (`delivered > 0`) → `StreamError(delivered=yielded, resume_offset=yielded)`, not retried (can't safely resume an OpenAI-style char stream). The envelope lets a caller decide: discard-and-regenerate, or resume from `resume_offset`.
+- Retriable failure, retries exhausted, **no** output (`delivered == 0`) → `StreamError("stream_chat retries exhausted on ...", delivered=0)` — wrapped so callers have ONE except type for every severed/exhausted stream.
+- Non-retriable 4xx (400/401/403) → the original `httpx.HTTPStatusError` is **re-raised** (a request error, not a stream failure — lets callers distinguish bad-request from severed-stream).
 
 ## LLMResponse / EmbeddingResponse / ServerStats
 
@@ -86,21 +90,24 @@ async def chat(
     temperature: float = 0.7,
     max_tokens: int = 4096,
     stream: bool = False,
+    total_deadline: float | None = None,
     **kwargs,
 ) -> LLMResponse
 ```
 
-Non-streaming chat. `stream=True` raises `ValueError` (use `stream_chat`). `**kwargs` allowlist-passed into the payload: `top_p`, `seed`, `response_format`, `user`, `n`, `presence_penalty`, `frequency_penalty`, `stop`, `logit_bias`, `logprobs`, `top_logprobs`. Non-allowlisted kwargs logged-and-dropped. `total_deadline=N` in kwargs → passed to `with_retry` as the end-to-end budget (R6).
+Non-streaming chat. `stream=True` raises `ValueError` (use `stream_chat`). `**kwargs` allowlist-passed into the payload: `top_p`, `seed`, `response_format`, `user`, `n`, `presence_penalty`, `frequency_penalty`, `stop`, `logit_bias`, `logprobs`, `top_logprobs`. Non-allowlisted kwargs logged-and-dropped.
+
+`total_deadline` (R5) is an **explicit named param** — the end-to-end budget passed to `with_retry` in seconds. Accepted as a kwarg too (legacy compat) but the explicit form is preferred; neither path logs a spurious "dropping" warning.
 
 Raises: `ValueError` (no model, `stream=True`, missing `choices`), `httpx.HTTPStatusError` (non-retriable 4xx), `RetryExhaustedError`/`RetryTimeoutError` (via `with_retry`).
 
 ### chat_text
 
 ```python
-async def chat_text(self, messages, model=None, temperature=0.7, max_tokens=4096, **kwargs) -> str
+async def chat_text(self, messages, model=None, temperature=0.7, max_tokens=4096, total_deadline=None, **kwargs) -> str
 ```
 
-Shortcut: `chat(...).content`.
+Shortcut: `chat(...).content`. `total_deadline` forwarded to `chat` (R5).
 
 ### stream_chat
 
@@ -108,7 +115,7 @@ Shortcut: `chat(...).content`.
 async def stream_chat(self, messages, model=None, temperature=0.7, max_tokens=4096) -> AsyncIterator[str]
 ```
 
-SSE streaming. Yields `delta.content` chunks. Pre-output retriable failures (`RETRY_STATUS` / `RETRY_EXCEPTIONS`, `attempt < max_retries`, `not yielded`) retry. Failure **after** partial output → `StreamError(delivered=yielded, resume_offset=yielded)` (R4) — no retry (can't safely resume an OpenAI-style char stream).
+SSE streaming. Yields `delta.content` chunks. Pre-output retriable failures (`RETRY_STATUS` / `RETRY_EXCEPTIONS`, `attempt < max_retries`, `not yielded`) retry. All non-retried failure paths surface as `StreamError` (H4/R4 — see [StreamError](#streamerror)): partial-output failure → `StreamError(delivered=yielded)`; retriable-but-exhausted-no-output → `StreamError(delivered=0)`. Only non-retriable 4xx re-raise the original `HTTPStatusError`.
 
 ```python
 try:
@@ -177,6 +184,6 @@ client = create_async_client(base_url="http://localhost:11434/v1", api_key="k", 
 
 - No retry logic in `mlx_client` (single responsibility): `chat` routes to `http_client.with_retry`; `RETRY_STATUS`/`RETRY_EXCEPTIONS` imported from `http_client` (I6: top-level import, no function-internal lazy import).
 - `health()` reuses a long-lived `probe_client` + 1s throttle (R3), not a fresh client per call.
-- `StreamError` envelope (R4): caller knows how much was delivered.
+- `StreamError` envelope (R4/H4): one stream-failure type for every severed/exhausted stream; caller knows how much was delivered. Non-retriable 4xx still surface as the original `HTTPStatusError`.
 - `usage.total_tokens` always present (I3); `get_server_stats` typed (I12) with `raw` passthrough.
 - Cluster boundary: endpoint routing / model registry / circuit breaker / concurrency gate / metrics → fusion-gateway. Core is single `base_url`.

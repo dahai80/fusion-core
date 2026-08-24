@@ -172,11 +172,17 @@ class FusionMLXClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         stream: bool = False,
+        total_deadline: float | None = None,
         **kwargs,
     ) -> LLMResponse:
         resolved = self._resolve_model(model)
         if stream:
             raise ValueError("chat(stream=True) not supported; use stream_chat() for streaming")
+        # total_deadline is a with_retry control param, not an MLX payload field.
+        # Accept it both as explicit kwarg and (legacy) via **kwargs to avoid the
+        # "dropping non-allowlisted kwarg" false warning (R5).
+        legacy_deadline = kwargs.pop("total_deadline", None)
+        deadline = total_deadline if total_deadline is not None else legacy_deadline
         payload = {
             "model": resolved,
             "messages": messages,
@@ -193,7 +199,6 @@ class FusionMLXClient:
             else:
                 logger.warning("chat dropping non-allowlisted kwarg %s=%r", key, value)
 
-        deadline = kwargs.get("total_deadline")
         resp = await with_retry(
             lambda: self.client.post("/chat/completions", json=payload),
             retries=self.max_retries,
@@ -220,6 +225,7 @@ class FusionMLXClient:
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        total_deadline: float | None = None,
         **kwargs,
     ) -> str:
         resp = await self.chat(
@@ -227,6 +233,7 @@ class FusionMLXClient:
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            total_deadline=total_deadline,
             **kwargs,
         )
         return resp.content
@@ -282,6 +289,17 @@ class FusionMLXClient:
                         delivered=yielded,
                         resume_offset=yielded,
                     ) from e
+                if e.response.status_code in RETRY_STATUS:
+                    # Retriable status but retries exhausted, no output: wrap in
+                    # StreamError so callers have ONE stream-failure type (H4/R4).
+                    raise StreamError(
+                        f"stream_chat retries exhausted on retriable HTTP {e.response.status_code}",
+                        delivered=0,
+                        resume_offset=0,
+                    ) from e
+                # Non-retriable 4xx (400/401/403...): a request error, not a stream
+                # failure. Re-raise the original HTTPStatusError so callers can
+                # distinguish bad-request from severed-stream.
                 raise
             except RETRY_EXCEPTIONS as e:
                 last_exc = e
@@ -294,8 +312,21 @@ class FusionMLXClient:
                         delivered=yielded,
                         resume_offset=yielded,
                     ) from e
-                raise
-        raise last_exc if last_exc is not None else StreamError("stream_chat exhausted")
+                # Retriable exception but retries exhausted, no output: wrap (H4/R4).
+                raise StreamError(
+                    f"stream_chat retries exhausted on {type(e).__name__}",
+                    delivered=0,
+                    resume_offset=0,
+                ) from e
+        # Loop exited without return/raise (e.g. max_retries==0 and a retriable
+        # status slipped through the guard): wrap defensively as StreamError.
+        if last_exc is not None:
+            raise StreamError(
+                f"stream_chat exhausted on {type(last_exc).__name__}",
+                delivered=0,
+                resume_offset=0,
+            ) from last_exc
+        raise StreamError("stream_chat exhausted with no exception recorded", delivered=0, resume_offset=0)
 
     async def embed(
         self,

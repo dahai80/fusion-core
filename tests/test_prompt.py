@@ -44,12 +44,30 @@ class TestPromptManager:
         pm = PromptManager(tmp_path)
         assert pm.list_names() == ["a", "b"]
 
-    def test_get_cached(self, tmp_path):
+    def test_get_hot_reloads_on_mtime_change(self, tmp_path):
+        # E3: on-disk edits must be picked up on the next get() when mtime changes.
         (tmp_path / "greet.txt").write_text("v1", encoding="utf-8")
         pm = PromptManager(tmp_path)
         assert pm.get("greet") == "v1"
         (tmp_path / "greet.txt").write_text("v2", encoding="utf-8")
+        assert pm.get("greet") == "v2", "prompt get must hot-reload on mtime change (E3)"
+
+    def test_get_caches_within_same_mtime(self, tmp_path):
+        # E3: repeated get without a disk edit returns cached (no re-read).
+        f = tmp_path / "greet.txt"
+        f.write_text("v1", encoding="utf-8")
+        pm = PromptManager(tmp_path)
         assert pm.get("greet") == "v1"
+        # rewrite identical content preserving mtime resolution: same text expected
+        assert pm.get("greet") == "v1"
+
+    def test_clear_cache_forces_reload(self, tmp_path):
+        (tmp_path / "greet.txt").write_text("v1", encoding="utf-8")
+        pm = PromptManager(tmp_path)
+        assert pm.get("greet") == "v1"
+        pm.clear_cache()
+        (tmp_path / "greet.txt").write_text("v2", encoding="utf-8")
+        assert pm.get("greet") == "v2"
 
     def test_missing_dir_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):

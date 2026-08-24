@@ -7,7 +7,8 @@ httpx async connection pool + retry. Single source of truth for retry codes/exce
 - [Constants](#constants)
 - [`RetryExhaustedError`](#retryexhaustederror) / [`RetryTimeoutError`](#retrytimeouterror)
 - [`get_async_client(base_url, *, timeout, headers)`](#get_async_client)
-- [`with_retry(fn, *, retries, initial_backoff, max_backoff, retry_on, jitter, total_deadline, disable)`](#with_retry)
+- [`gateway_circuit_breaker_ok(gateway_url, *, timeout)`](#gateway_circuit_breaker_ok)
+- [`with_retry(fn, *, retries, initial_backoff, max_backoff, retry_on, jitter, total_deadline, disable, verify_gateway, gateway_url)`](#with_retry)
 - [`close_all()`](#close_all) / [`close_all_sync()`](#close_all_sync)
 - [Metrics](#metrics): `set_metrics_callback`, `get_metrics_snapshot`, `reset_metrics`
 
@@ -37,11 +38,33 @@ def get_async_client(
 ) -> httpx.AsyncClient
 ```
 
-Returns a pooled `AsyncClient` for `base_url` on the **current event loop**. Pool key = `f"{loop_id}:{base_url}"`. LRU via `OrderedDict`, cap 8 per loop. On full pool, evicts the **same-loop** LRU key only (R2: never schedules `aclose` on another loop's client → no `RuntimeError: attached to a different loop`, no fd leak). Calling from a loop with no same-loop candidates logs a warning and skips eviction (cross-loop evict avoided).
+Returns a pooled `AsyncClient` for `base_url` on the **current event loop**. Pool key = `f"{loop_id}:{base_url}"`. LRU via `OrderedDict`, cap 8 per loop. On full pool, evicts the **same-loop** LRU key only (R2: never schedules `aclose` on another loop's client → no `RuntimeError: attached to a different loop`). The evicted client's `aclose()` is scheduled via `loop.create_task()` and the resulting task held in a module-level `_pending_closes` set with a done-callback that removes it — preventing the GC from destroying the task mid-flight and leaking fds (the original fire-and-forget `create_task` lost its only reference). `_pending_closes` is drained by `close_all`/`close_all_sync`. Calling from a loop with no same-loop candidates logs a warning and skips eviction (cross-loop evict avoided).
 
 ```python
 from fusion_core import get_async_client
 client = get_async_client("http://localhost:11434/v1")
+```
+
+## gateway_circuit_breaker_ok
+
+```python
+async def gateway_circuit_breaker_ok(
+    gateway_url: str | None = None,
+    *,
+    timeout: float = 2.0,
+) -> bool
+```
+
+H3/E4: probes fusion-gateway's `/readyz` to confirm the gateway is reachable **and** its circuit breaker is not open, *before* `with_retry(disable=True)` hands retry off. The gateway `/readyz` returns `{"status":"ready","mode":"full|degraded"}` (200) when the local `CircuitBreakerState != StateOpen`, or `{"status":"not_ready","local_reasons":["circuit_breaker_open",...]}` (503) when the breaker is open.
+
+- `gateway_url` — defaults to `default_gateway_base_url()` (`$FUSION_GATEWAY_URL` or `http://localhost:11432`).
+- Returns `True` only on HTTP 200 + `status == "ready"`.
+- Returns `False` on 503/not-ready (breaker open), unreachable (`ConnectError`/`ReadTimeout`/`PoolTimeout`/`RemoteProtocolError`), or unparseable body (`ValueError`/`KeyError`) — every False path logs a warning naming the reason, so the probe is **observable**, not silent.
+
+```python
+from fusion_core import gateway_circuit_breaker_ok
+if await gateway_circuit_breaker_ok():
+    ...  # safe to hand retry to gateway
 ```
 
 ## with_retry
@@ -57,6 +80,8 @@ async def with_retry(
     jitter: bool = True,
     total_deadline: float | None = None,
     disable: bool = False,
+    verify_gateway: bool = False,
+    gateway_url: str | None = None,
 ) -> httpx.Response
 ```
 
@@ -66,7 +91,9 @@ Calls `fn()` with exponential backoff + full jitter.
 - `retry_on` — override retriable statuses (default `RETRY_STATUS`).
 - `jitter=True` — `random.uniform(0, backoff)`; `False` → exact backoff.
 - `total_deadline` (R6) — end-to-end budget in seconds. Checked before each attempt and before each sleep; exceeded → `RetryTimeoutError`. Caps the whole retry budget, not just one request.
-- `disable=True` (A4) — calls `fn()` once, no retry. Use when fusion-gateway's circuit breaker owns retry (avoid double-retry). No metrics bumped on the disable path.
+- `disable=True` (A4) — calls `fn()` once, no retry. Use when fusion-gateway's circuit breaker owns retry (avoid double-retry). The disable path is **observable** (E4):
+  - `verify_gateway=False` (default) — logs an info line that the caller assumes upstream handles resilience (zero core resilience), then calls `fn()` once.
+  - `verify_gateway=True` — calls `gateway_circuit_breaker_ok(gateway_url)` first. If the breaker is verified ready, logs "handing retry off" and calls `fn()` once. If the breaker is open/unreachable, logs a warning and **falls back to core retry** (`disable` flipped to `False`) so there is no capability vacuum (H3/E4). `gateway_url` overrides the default gateway URL for the probe.
 
 Outcomes:
 - Success (non-retriable status) → returns `Response`, bumps metrics.
@@ -87,7 +114,7 @@ async def close_all() -> None       # call in an async context
 def close_all_sync() -> None        # call at shutdown (uses asyncio.run per client)
 ```
 
-Closes all pooled clients. `close_all_sync` best-effort: clients whose loop is gone log a warning and are skipped (fd may leak — unavoidable without a running loop).
+Closes all pooled clients. `close_all` runs in an async context (awaits each `aclose`, then drains `_pending_closes`). `close_all_sync` (R3) closes **cross-loop** clients correctly: each client was created on a recorded owning loop (`_client_loops`); if that loop is still running, `aclose` is scheduled on it via `asyncio.run_coroutine_threadsafe(...).result(timeout=10)` — no `RuntimeError: attached to a different loop`; if the loop is gone, a fresh `asyncio.run` is used. Clients that still can't close are counted as `leaked` (warning log, fd may leak). Pending eviction tasks are best-effort drained.
 
 ## Metrics
 
@@ -108,6 +135,7 @@ snap = get_metrics_snapshot()               # {"localhost:11434": {"calls": 42, 
 ## Design notes
 
 - Retry single source (R9/R10): `RETRY_STATUS`/`RETRY_EXCEPTIONS` defined here only; `mlx_client` imports them.
-- Cross-loop safety (R2): eviction scoped to same-loop keys; cross-loop `aclose` avoided.
+- Cross-loop safety (R2/R3): eviction scoped to same-loop keys; evicted `aclose` task held in `_pending_closes` (no GC/fd leak); `close_all_sync` closes cross-loop clients on their owning loop.
 - End-to-end deadline (R6): `total_deadline` includes inter-retry sleep, not just per-request timeout.
 - Disable path (A4): hands retry to gateway circuit breaker; no metrics, no retry.
+- Capability vacuum (H3/E4): `disable=True, verify_gateway=True` probes gateway `/readyz` first; open/unreachable breaker falls back to core retry so handing retry off never leaves zero resilience.

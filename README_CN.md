@@ -22,13 +22,13 @@ pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 
 | 模块 | 关键符号 | 用途 |
 |------|----------|------|
-| `mlx_client` | `FusionMLXClient`、`create_async_client(*, backend=)`、`LLMResponse`、`EmbeddingResponse`、`ServerStats`、`StreamError` | 统一 MLX 推理客户端（chat / embedding / stream）。默认 base_url `localhost:11434`（运行时解析 `FUSION_MLX_URL`，指向 fusion-gateway 即多节点）。重试下沉 `http_client`。`chat(**kwargs)` 白名单透传（`top_p`/`seed`/`total_deadline` 等）；`stream_chat` 中断抛 `StreamError(delivered=, resume_offset=)`；`create_async_client(model=...)` 记默认 model；`health()` 复用 `probe_client` + 1s 节流不泄漏主连接；`get_server_stats()` 返回 `ServerStats` dataclass |
+| `mlx_client` | `FusionMLXClient`、`create_async_client(*, backend=)`、`LLMResponse`、`EmbeddingResponse`、`ServerStats`、`StreamError` | 统一 MLX 推理客户端（chat / embedding / stream）。默认 base_url `localhost:11434`（运行时解析 `FUSION_MLX_URL`，指向 fusion-gateway 即多节点）。重试下沉 `http_client`。`chat(total_deadline=)` 为显式命名参数（R5）传端到端预算；`**kwargs` 白名单透传（`top_p`/`seed` 等）；`stream_chat` **所有**流失败路径抛 `StreamError(delivered=, resume_offset=)`（中断 severed 或 可重试耗尽无输出），调用方只认一种流失败类型（H4/R4）；不可重试 4xx 仍抛原 `HTTPStatusError`；`create_async_client(model=...)` 记默认 model；`health()` 复用 `probe_client` + 1s 节流不泄漏主连接；`get_server_stats()` 返回 `ServerStats` dataclass |
 | `parse` | `parse_llm_json`（抛 `ParseError` 不兜底）、`parse_llm_json_safe`（显式默认，default 必传 dict/list）、`parse_llm_json_lenient`（`raw_decode` 提取首个对象，扫描上限 200k）、`strip_code_fence` | LLM 输出 JSON 解析，**失败可见不静默** |
 | `config` | `load_settings`（mtime 失效缓存）、`resolve_api_key`、`load_api_key`、`get_env`、`default_mlx_base_url`、`clear_cache` | 配置懒加载 + api_key 解析 + 缓存失效（settings 文件 mtime 变即失效） |
 | `logging` | `setup_logging`、`get_logger` | 幂等日志初始化（每次 setLevel 生效，`propagate` 默认 True 不阻断 host root，区分包级 `NullHandler`），JSON 格式可选 |
-| `http_client` | `get_async_client`（per-loop 连接池，`OrderedDict` LRU 上限 8，驱逐只动同 loop 键）、`with_retry`（full jitter，`disable=` 关重试交 gateway 熔断，`total_deadline=` 总预算；耗尽抛 `RetryExhaustedError`/`RetryTimeoutError`）、`close_all`、`close_all_sync`、`set_metrics_callback`、`get_metrics_snapshot`、`reset_metrics` | httpx async 客户端池 + 重试（重试码/异常单一来源 `RETRY_STATUS`/`RETRY_EXCEPTIONS`） |
-| `http` | `create_app`、`install_auth`、`standard_error_handler` | FastAPI 应用工厂 + 纯 ASGI 中间件（request_id 最外层，SSE 不截断；认证密钥封进中间件实例不落 `app.state`；422/500 同等脱敏；白名单路径 `rstrip` 规范化） |
-| `prompt` | `PromptManager` | prompt 模板管理（只管引擎不含领域内容，缺失目录直接抛 `FileNotFoundError`；**永久缓存**——模板按不可变运行资产，运行期改盘不生效，需 hot-reload 仿 `config.load_settings` 加 mtime） |
+| `http_client` | `get_async_client`（per-loop 连接池，`OrderedDict` LRU 上限 8，驱逐只动同 loop 键）、`gateway_circuit_breaker_ok`（探活 gateway `/readyz`，H3/E4）、`with_retry`（full jitter，`disable=` + `verify_gateway=` 安全关重试交 gateway 熔断，`total_deadline=` 总预算；耗尽抛 `RetryExhaustedError`/`RetryTimeoutError`）、`close_all`、`close_all_sync`、`set_metrics_callback`、`get_metrics_snapshot`、`reset_metrics` | httpx async 客户端池 + 重试（重试码/异常单一来源 `RETRY_STATUS`/`RETRY_EXCEPTIONS`） |
+| `http` | `create_app`、`install_auth`、`standard_error_handler` | FastAPI 应用工厂 + 纯 ASGI 中间件（`install_auth` 重排 `user_middleware` 使 request_id 最外层——401 带同一 id，H1/E1；SSE 不截断；认证密钥封进中间件实例不落 `app.state`；422/500 同等脱敏；白名单路径 `rstrip` 规范化） |
+| `prompt` | `PromptManager` | prompt 模板管理（只管引擎不含领域内容，缺失目录直接抛 `FileNotFoundError`；**mtime 闸门缓存**——运行期改盘即生效（mtime 变即失效重读），`clear_cache()` 强制全刷新，E3） |
 
 ## 用法
 
@@ -56,7 +56,8 @@ try:
     async for chunk in client.stream_chat(messages=[...]):
         collected.append(chunk)
 except StreamError as e:
-    # 部分输出已交付；e.delivered / e.resume_offset 告诉你已发多少、续传偏移
+    # 所有流失败路径都抛 StreamError（H4/R4）：中断 severed（e.delivered > 0）
+    # 或 可重试耗尽无输出（e.delivered == 0）。不可重试 4xx 抛 HTTPStatusError（坏请求非中断）。
     log.warning("流式中断，已交付 %d 字符，续传偏移 %d", e.delivered, e.resume_offset)
 ```
 
@@ -71,8 +72,10 @@ resp = await client.chat(messages=[...], total_deadline=30.0)
 
 ```python
 from fusion_core import with_retry
-# 当 fusion-gateway 熔断器接管重试时，关掉 core 自身重试
-resp = await with_retry(fn, disable=True)
+# 当 fusion-gateway 熔断器接管重试时，关掉 core 自身重试。
+# verify_gateway=True 先探活 gateway /readyz；熔断开或 gateway 不可达，
+# core 回退自身重试（H3/E4——不留能力真空）。
+resp = await with_retry(fn, disable=True, verify_gateway=True)
 ```
 
 ### FastAPI 工厂
@@ -108,8 +111,8 @@ fusion-core 是**单进程单引擎客户端库**，不是集群治理面。PRD 
 | 能力 | gateway 实现 | core 侧动作 |
 |------|-------------|-----------|
 | 端点注册表 / 路由 / 故障转移 | `discovery`（节点注册/健康/驱逐）+ `router/engine` | `default_mlx_base_url()` 读 `FUSION_MLX_URL`，指向 gateway 即多节点 |
-| 熔断器 | `middleware/retry` RetryChat | `with_retry(disable=True)` 关 core 重试，交 gateway 熔断，避免双重重试 |
-| 每端点并发度闸门 | `middleware/budget` BudgetBlock | core 连接池不叠加并发上限 |
+| 熔断器 | `router/circuit_breaker.go:CircuitBreaker` | `with_retry(disable=True)` 关 core 重试，交 gateway 熔断，避免双重重试 |
+| 每端点并发度闸门 | `router/engine.go:MaxConcurrent` | core 连接池不叠加并发上限 |
 | 模型注册表 model→endpoint | `router` 按 model 路由 | 调用方传 model，gateway 解析端点，core 不持拓扑 |
 | 指标埋点 Prometheus | `observability/metrics`（circuitBreakerState/Trips、routeDecisions、requestDuration、requestTotal） | core 不重复埋点（`http_client` metrics 回调保留供单进程场景） |
 | Agent 调度（槽位/队列/取消） | 路由层并发治理 | 调度属业务编排，归 fusion-cowork / agent-studio |
@@ -158,7 +161,7 @@ return LLMResult(content=result.content, model=result.model)
 ## 测试
 
 ```bash
-pytest tests/ -m "not integration"   # 单元：156 passed, 1 skipped
+pytest tests/ -m "not integration"   # 单元：164 passed, 1 skipped
 pytest tests/ -m integration          # 真实 fusion-mlx 引擎（自起停）
 ruff check . && ruff format --check . # lint clean
 ```

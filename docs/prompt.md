@@ -1,6 +1,6 @@
 # prompt
 
-Prompt-template management. Engine only — no domain content. Permanent in-memory cache, `{{var}}` rendering.
+Prompt-template management. Engine only — no domain content. mtime-gated in-memory cache, `{{var}}` rendering.
 
 ## Symbols
 
@@ -14,6 +14,7 @@ class PromptManager:
     def get(self, name: str) -> str
     def render(self, template_name: str, **variables: Any) -> str
     def list_names(self) -> list[str]
+    def clear_cache(self) -> None
 ```
 
 ### __init__
@@ -26,7 +27,7 @@ class PromptManager:
 def get(self, name: str) -> str
 ```
 
-Reads template `name` (resolves `name`, then `name.txt`, then `name.md`). **Permanent cache** (I8): first read wins, cached for the instance lifetime. On-disk edits after first read are **not** picked up. Templates are treated as immutable runtime assets. If hot-reload is ever needed, gate the cache on file mtime like `config.load_settings` (R1).
+Reads template `name` (resolves `name`, then `name.txt`, then `name.md`). **mtime-gated cache** (E3): each entry stores `(text, mtime_ns)`. On `get`, if the cached mtime still matches the file's current `st_mtime_ns`, the cached text is returned (no IO); if the file changed on disk, it is re-read and the cache updated. This fixes the old permanent-cache defect where on-disk edits after first read were silently invisible.
 
 ### render
 
@@ -34,7 +35,15 @@ Reads template `name` (resolves `name`, then `name.txt`, then `name.md`). **Perm
 def render(self, template_name: str, **variables: Any) -> str
 ```
 
-Loads `template_name`, substitutes `{var}` placeholders with `variables`. Escaping: `{{` → `{`, `}}` → `}`. Missing variable → `KeyError` (fail visibly, no silent empty substitution).
+Loads `template_name` (via `get`, so mtime-gated), substitutes `{var}` placeholders with `variables`. Escaping: `{{` → `{`, `}}` → `}`. Missing variable → `KeyError` (fail visibly, no silent empty substitution).
+
+### clear_cache
+
+```python
+def clear_cache(self) -> None
+```
+
+Drops all cached entries (E3). Next `get`/`render` re-reads from disk. Use when an external process rewrites templates in place without bumping mtime, or to force a refresh in tests.
 
 ```python
 mgr = PromptManager("prompts/")
@@ -70,6 +79,6 @@ print(mgr.list_names())  # ["grade", "summarize"]
 ## Design notes
 
 - Engine only, no domain content: K12/finance/health prompts live in their own projects; core just loads + renders.
-- Permanent cache (I8): deliberate — templates are immutable runtime assets, hot-reload would need an mtime gate (parallel to `config` R1). Documented in source comment + README.
+- mtime-gated cache (E3): on-disk template edits are picked up automatically (mtime change invalidates the entry), replacing the old permanent-cache behavior that silently ignored edits. `clear_cache()` forces a full refresh.
 - Missing var raises `KeyError` (no silent `{var}` left in output).
 - Missing dir/file raises `FileNotFoundError` (no silent empty).

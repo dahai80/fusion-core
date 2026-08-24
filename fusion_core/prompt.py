@@ -16,11 +16,10 @@ class PromptManager:
         self.prompts_dir = Path(prompts_dir)
         if not self.prompts_dir.is_dir():
             raise FileNotFoundError(f"prompts_dir not a directory: {self.prompts_dir}")
-        # Permanent in-memory cache: first read of a template wins; later on-disk
-        # edits are NOT picked up for the lifetime of this PromptManager instance.
-        # Prompt templates are treated as immutable runtime assets. If hot-reload
-        # is ever needed, gate this on mtime like config.load_settings (R1).
-        self._cache: dict[str, str] = {}
+        # mtime-gated cache: first read wins, but on-disk edits are picked up on
+        # the next get() when mtime_ns changes (E3 — parallel to config R1 hot-reload).
+        # Cache maps name -> (text, mtime_ns).
+        self._cache: dict[str, tuple[str, int]] = {}
 
     def _resolve(self, name: str) -> Path:
         p = self.prompts_dir / name
@@ -33,13 +32,18 @@ class PromptManager:
         raise FileNotFoundError(f"prompt template not found: {name} in {self.prompts_dir}")
 
     def get(self, name: str) -> str:
-        cached = self._cache.get(name)
-        if cached is not None:
-            return cached
         p = self._resolve(name)
+        mtime = p.stat().st_mtime_ns
+        cached = self._cache.get(name)
+        if cached is not None and cached[1] == mtime:
+            return cached[0]
         text = p.read_text(encoding="utf-8")
-        self._cache[name] = text
+        self._cache[name] = (text, mtime)
         return text
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+        logger.info("prompt cache cleared")
 
     def render(self, template_name: str, **variables: Any) -> str:
         template = self.get(template_name)

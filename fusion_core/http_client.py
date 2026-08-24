@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 from collections import OrderedDict
@@ -16,6 +17,14 @@ RETRY_EXCEPTIONS = (httpx.ConnectError, httpx.ReadTimeout, httpx.PoolTimeout, ht
 _MAX_POOL_SIZE = 8
 
 _client_pool: OrderedDict[str, httpx.AsyncClient] = OrderedDict()
+
+# Track the event loop each pooled client was created on, so close_all_sync
+# can close cross-loop clients on their owning loop instead of failing (R3).
+_client_loops: dict[str, asyncio.AbstractEventLoop] = {}
+
+# Hold strong refs to fire-and-forget aclose tasks from _evict_lru so the GC
+# cannot destroy them mid-flight and leak fds (R2). Drained by close_all*.
+_pending_closes: set[asyncio.Task] = set()
 
 # --- metrics hook (§5.2-F) ---
 # Per-base_url counters, optional callback for gateway /metrics aggregation.
@@ -111,7 +120,10 @@ def _evict_lru() -> None:
         except RuntimeError:
             logger.warning("evict outside loop, client %s not aclosed (fd may leak)", key)
             return
-        loop.create_task(client.aclose())
+        task = loop.create_task(client.aclose())
+        _pending_closes.add(task)
+        task.add_done_callback(_pending_closes.discard)
+        logger.info("evict scheduled aclose task for %s", key)
         return
 
 
@@ -136,8 +148,47 @@ def get_async_client(
         headers=headers or {},
     )
     _client_pool[key] = client
+    _client_loops[key] = asyncio.get_running_loop()
     logger.info("http client pooled for base_url=%s loop=%s", base, _loop_id())
     return client
+
+
+async def gateway_circuit_breaker_ok(
+    gateway_url: str | None = None,
+    *,
+    timeout: float = 2.0,
+) -> bool:
+    # H3/E4: before handing retry to the gateway (with_retry(disable=True)), verify
+    # the gateway is reachable AND its circuit breaker is not open. The gateway
+    # /readyz returns {"status":"ready","mode":"full|degraded"} (200) or
+    # {"status":"not_ready","local_reasons":["circuit_breaker_open",...]} (503).
+    # An open breaker or an unreachable gateway means handing retry off is a
+    # capability vacuum — caller must fall back to core's own retry.
+    from fusion_core.config import default_gateway_base_url
+
+    base = (gateway_url or default_gateway_base_url()).rstrip("/")
+    try:
+        async with httpx.AsyncClient(base_url=base, timeout=timeout) as c:
+            resp = await c.get("/readyz")
+            if resp.status_code != 200:
+                logger.warning(
+                    "gateway_circuit_breaker_ok: /readyz status %s (breaker may be open); handing retry off is unsafe",
+                    resp.status_code,
+                )
+                return False
+            data = resp.json()
+            status = data.get("status")
+            if status != "ready":
+                logger.warning("gateway_circuit_breaker_ok: /readyz status=%r, not ready", status)
+                return False
+            logger.info("gateway_circuit_breaker_ok: gateway ready mode=%s", data.get("mode"))
+            return True
+    except (httpx.ConnectError, httpx.ReadTimeout, httpx.PoolTimeout, httpx.RemoteProtocolError) as exc:
+        logger.warning("gateway_circuit_breaker_ok: gateway unreachable (%s); handing retry off is unsafe", exc)
+        return False
+    except (ValueError, KeyError) as exc:
+        logger.warning("gateway_circuit_breaker_ok: /readyz body unparseable (%s); treating as unsafe", exc)
+        return False
 
 
 async def with_retry(
@@ -150,14 +201,30 @@ async def with_retry(
     jitter: bool = True,
     total_deadline: float | None = None,
     disable: bool = False,
+    verify_gateway: bool = False,
+    gateway_url: str | None = None,
 ) -> httpx.Response:
     if disable:
-        resp = await fn()
-        return resp
+        if verify_gateway:
+            breaker_ok = await gateway_circuit_breaker_ok(gateway_url)
+            if not breaker_ok:
+                logger.warning(
+                    "with_retry disable=True but gateway circuit breaker unverified/open; "
+                    "falling back to core retry (H3/E4: no capability vacuum)"
+                )
+                disable = False
+            else:
+                logger.info("with_retry disable=True: gateway breaker verified ready, handing retry off")
+                resp = await fn()
+                return resp
+        else:
+            logger.info("with_retry disable=True: caller assumes upstream (gateway) handles retry/circuit-breaking; zero core resilience")
+            resp = await fn()
+            return resp
     retry_codes = frozenset(retry_on) if retry_on is not None else RETRY_STATUS
     backoff = initial_backoff
     last_exc: Exception | None = None
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     started = loop.time()
     _retries_used = 0
     _last_resp: httpx.Response | None = None
@@ -260,23 +327,55 @@ async def close_all() -> None:
     closed = 0
     items = list(_client_pool.items())
     _client_pool.clear()
+    _client_loops.clear()
     for _, client in items:
         if not client.is_closed:
             await client.aclose()
             closed += 1
+    await _drain_pending_closes()
     logger.info("close_all: closed %d pooled http clients", closed)
 
 
 def close_all_sync() -> None:
     items = list(_client_pool.items())
     _client_pool.clear()
+    _client_loops.clear()
     closed = 0
+    leaked = 0
     for key, client in items:
         if client.is_closed:
             continue
+        owner_loop = _client_loops.get(key)
         try:
-            asyncio.run(client.aclose())
+            if owner_loop is not None and owner_loop.is_running():
+                # Cross-loop client: schedule close on its owning loop (R3).
+                fut = asyncio.run_coroutine_threadsafe(client.aclose(), owner_loop)
+                fut.result(timeout=10.0)
+            else:
+                # No owning loop or loop stopped: fresh loop is safe (R3).
+                asyncio.run(client.aclose())
             closed += 1
-        except RuntimeError as exc:
+        except (RuntimeError, TimeoutError) as exc:
+            leaked += 1
             logger.warning("close_all_sync: client %s not aclosed (%s); fd may leak", key, exc)
-    logger.info("close_all_sync: closed %d pooled http clients", closed)
+    _client_loops.clear()
+    # Best-effort drain of pending eviction tasks (R2).
+    for task in list(_pending_closes):
+        if not task.done():
+            with contextlib.suppress(RuntimeError):
+                asyncio.run(_wait_task(task))
+    _pending_closes.clear()
+    logger.info("close_all_sync: closed %d pooled http clients, %d leaked", closed, leaked)
+
+
+async def _drain_pending_closes() -> None:
+    while _pending_closes:
+        task = _pending_closes.pop()
+        if not task.done():
+            with contextlib.suppress(Exception):
+                await task
+
+
+async def _wait_task(task: asyncio.Task) -> None:
+    with contextlib.suppress(Exception):
+        await task

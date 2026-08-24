@@ -100,6 +100,11 @@ class _AuthASGIMiddleware:
                 break
         token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else ""
         if not any(hmac.compare_digest(token, k) for k in self._keys_list):
+            # request_id middleware is OUTERMOST (install_auth re-orders), so
+            # scope["state"]["request_id"] is already set by it. The outer
+            # middleware's send_wrapper also adds the x-request-id response
+            # header, so we must NOT add it here (would duplicate). Fall back to
+            # a uuid only if request_id middleware somehow didn't run.
             rid = scope.get("state", {}).get("request_id") or str(uuid.uuid4())
             body = (
                 b'{"error": "Unauthorized", "detail": "invalid or missing api key", "request_id": "'
@@ -112,7 +117,6 @@ class _AuthASGIMiddleware:
                     "status": 401,
                     "headers": [
                         (b"content-type", b"application/json"),
-                        (b"x-request-id", rid.encode("latin-1")),
                     ],
                 }
             )
@@ -169,4 +173,18 @@ def install_auth(app: FastAPI, *, api_keys: list[str] | None = None) -> None:
             )
         keys = [resolved]
     app.add_middleware(_AuthASGIMiddleware, keys_list=list(keys))
-    logger.info("install_auth: configured bearer key auth for %s", app.title)
+    # Re-order so _RequestIdASGIMiddleware is outermost: add_middleware inserts at
+    # the FRONT of user_middleware, so the LAST add is outermost. create_app already
+    # added _RequestIdASGIMiddleware (making auth outer when auth is added here last).
+    # Remove the existing request_id entry and re-add it LAST so it sits outside auth
+    # and 401 responses carry the SAME id the downstream request_id middleware would
+    # have assigned (H1: previously auth's uuid fallback produced a divergent id).
+    app.user_middleware = [
+        m for m in app.user_middleware if m.cls is not _RequestIdASGIMiddleware
+    ]
+    app.add_middleware(_RequestIdASGIMiddleware)
+    # Force rebuild of the cached middleware stack so the new order takes effect
+    # even if the stack was already built (e.g. TestClient startup).
+    app.middleware_stack = None
+    app.build_middleware_stack()
+    logger.info("install_auth: configured bearer key auth for %s (request_id outermost)", app.title)

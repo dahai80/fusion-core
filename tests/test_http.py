@@ -160,6 +160,28 @@ class TestInstallAuth:
             assert r.status_code == 401
             assert r.headers.get("x-request-id"), "401 must carry request_id from outer middleware"
 
+    def test_401_request_id_matches_client_sent_id(self):
+        # E1/H1: client sends x-request-id; 401 must echo the SAME id, proving
+        # the request_id middleware runs OUTSIDE auth (so auth reads the real id,
+        # not a divergent uuid fallback). Regression guard for middleware order.
+        app = create_app("svc-rid-continuity")
+        install_auth(app, api_keys=["secret123"])
+
+        @app.get("/secret")
+        async def secret():
+            return {"ok": True}
+
+        client = pytest.importorskip("starlette.testclient")
+        fixed_id = "req-continuity-1234567890"
+        with client.TestClient(app, raise_server_exceptions=False) as c:
+            r = c.get("/secret", headers={"x-request-id": fixed_id})
+            assert r.status_code == 401
+            echoed = r.headers.get("x-request-id")
+            assert echoed == fixed_id, (
+                f"401 x-request-id must equal client-sent id (request_id outermost); "
+                f"got {echoed!r} — auth middleware likely used a divergent uuid fallback"
+            )
+
     def test_auth_rejects_near_miss_token(self):
         app = create_app("svc-nearmiss")
         install_auth(app, api_keys=["secret123"])

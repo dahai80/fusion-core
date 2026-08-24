@@ -9,6 +9,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 DEFAULT_MLX_PORT = 11434
+DEFAULT_GATEWAY_PORT = 11432
 
 _SETTINGS_CACHE: dict[str, tuple[dict, float]] = {}
 
@@ -18,6 +19,10 @@ _BOOL_FALSE = {"0", "false", "no", "off", "n", "f"}
 
 def default_mlx_base_url() -> str:
     return os.environ.get("FUSION_MLX_URL", f"http://localhost:{DEFAULT_MLX_PORT}/v1")
+
+
+def default_gateway_base_url() -> str:
+    return os.environ.get("FUSION_GATEWAY_URL", f"http://localhost:{DEFAULT_GATEWAY_PORT}")
 
 
 def get_env(key: str, default: Any = None, *, cast: type = str) -> Any:

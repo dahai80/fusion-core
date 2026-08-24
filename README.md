@@ -22,13 +22,13 @@ Requirements: Python >=3.12.
 
 | Module | Key symbols | Purpose |
 |--------|-------------|---------|
-| `mlx_client` | `FusionMLXClient`, `create_async_client(*, backend=)`, `LLMResponse`, `EmbeddingResponse`, `ServerStats`, `StreamError` | Unified MLX inference client (chat / embedding / stream). Default base_url `localhost:11434` (resolved at runtime from `FUSION_MLX_URL`; point it at fusion-gateway for multi-node). Retry delegated to `http_client`. `chat(**kwargs)` allowlist-passes (`top_p`/`seed`/`total_deadline` etc.); `stream_chat` raises `StreamError(delivered=, resume_offset=)` on mid-stream failure; `create_async_client(model=...)` records a default model; `health()` reuses a `probe_client` with 1s throttle (no main-connection leak); `get_server_stats()` returns a `ServerStats` dataclass |
+| `mlx_client` | `FusionMLXClient`, `create_async_client(*, backend=)`, `LLMResponse`, `EmbeddingResponse`, `ServerStats`, `StreamError` | Unified MLX inference client (chat / embedding / stream). Default base_url `localhost:11434` (resolved at runtime from `FUSION_MLX_URL`; point it at fusion-gateway for multi-node). Retry delegated to `http_client`. `chat(total_deadline=)` is an explicit named param (R5) for the end-to-end budget; `**kwargs` allowlist-passes (`top_p`/`seed` etc.); `stream_chat` raises `StreamError(delivered=, resume_offset=)` for **all** stream-failure paths (mid-stream severed OR retriable-exhausted-no-output) so callers have ONE stream-failure type (H4/R4); non-retriable 4xx still raise the original `HTTPStatusError`; `create_async_client(model=...)` records a default model; `health()` reuses a `probe_client` with 1s throttle (no main-connection leak); `get_server_stats()` returns a `ServerStats` dataclass |
 | `parse` | `parse_llm_json` (raises `ParseError`, no fallback), `parse_llm_json_safe` (explicit `default` required, must be dict/list), `parse_llm_json_lenient` (`raw_decode` extracts first object, scan cap 200k), `strip_code_fence` | Parse JSON from LLM output. **Failures are visible, never silent** |
 | `config` | `load_settings` (mtime-invalidated cache), `resolve_api_key`, `load_api_key`, `get_env`, `default_mlx_base_url`, `clear_cache` | Lazy config load + api_key resolution + cache invalidation (settings file mtime change → cache miss) |
 | `logging` | `setup_logging`, `get_logger` | Idempotent logging init (every `setLevel` applies; `propagate` defaults True so host root still receives logs; package-level `NullHandler` for library mode). Optional JSON format |
-| `http_client` | `get_async_client` (per-loop connection pool, `OrderedDict` LRU cap 8, evicts only same-loop keys), `with_retry` (full jitter; `disable=` to hand retry off to gateway circuit breaker; `total_deadline=` end-to-end budget; exhausted → `RetryExhaustedError` / `RetryTimeoutError`), `close_all`, `close_all_sync`, `set_metrics_callback`, `get_metrics_snapshot`, `reset_metrics` | httpx async client pool + retry. Single source of truth for retry codes/exceptions: `RETRY_STATUS` / `RETRY_EXCEPTIONS` |
-| `http` | `create_app`, `install_auth`, `standard_error_handler` | FastAPI app factory + pure-ASGI middleware (request_id outermost, SSE not truncated; auth keys encapsulated in the middleware instance, never on `app.state`; 422 and 500 sanitized equally; whitelist paths `rstrip`-normalized) |
-| `prompt` | `PromptManager` | Prompt-template management (engine only, no domain content; missing dir raises `FileNotFoundError`; **permanent cache** — templates are immutable runtime assets, on-disk edits not picked up at runtime; if hot-reload is ever needed, gate on mtime like `config.load_settings`) |
+| `http_client` | `get_async_client` (per-loop connection pool, `OrderedDict` LRU cap 8, evicts only same-loop keys), `gateway_circuit_breaker_ok` (probes gateway `/readyz`, H3/E4), `with_retry` (full jitter; `disable=` + `verify_gateway=` to hand retry off to gateway circuit breaker safely; `total_deadline=` end-to-end budget; exhausted → `RetryExhaustedError` / `RetryTimeoutError`), `close_all`, `close_all_sync`, `set_metrics_callback`, `get_metrics_snapshot`, `reset_metrics` | httpx async client pool + retry. Single source of truth for retry codes/exceptions: `RETRY_STATUS` / `RETRY_EXCEPTIONS` |
+| `http` | `create_app`, `install_auth`, `standard_error_handler` | FastAPI app factory + pure-ASGI middleware (`install_auth` re-orders `user_middleware` so request_id is outermost — 401 carries the same id, H1/E1; SSE not truncated; auth keys encapsulated in the middleware instance, never on `app.state`; 422 and 500 sanitized equally; whitelist paths `rstrip`-normalized) |
+| `prompt` | `PromptManager` | Prompt-template management (engine only, no domain content; missing dir raises `FileNotFoundError`; **mtime-gated cache** — on-disk edits are picked up at runtime (mtime change invalidates the entry), `clear_cache()` forces a full refresh (E3)) |
 
 ## Usage
 
@@ -56,7 +56,9 @@ try:
     async for chunk in client.stream_chat(messages=[...]):
         collected.append(chunk)
 except StreamError as e:
-    # partial output already delivered; e.delivered / e.resume_offset tell you how much
+    # ALL stream-failure paths raise StreamError (H4/R4): mid-stream severed
+    # (e.delivered > 0) OR retriable-exhausted-no-output (e.delivered == 0).
+    # Non-retriable 4xx raise HTTPStatusError instead (bad request, not severed).
     log.warning("stream severed after %d chars, resume at %d", e.delivered, e.resume_offset)
 ```
 
@@ -71,8 +73,11 @@ resp = await client.chat(messages=[...], total_deadline=30.0)
 
 ```python
 from fusion_core import with_retry
-# when fusion-gateway's circuit breaker owns retry, disable core's own retry
-resp = await with_retry(fn, disable=True)
+# when fusion-gateway's circuit breaker owns retry, disable core's own retry.
+# verify_gateway=True probes gateway /readyz first; if the breaker is open or
+# the gateway is unreachable, core falls back to its own retry (H3/E4 — no
+# capability vacuum).
+resp = await with_retry(fn, disable=True, verify_gateway=True)
 ```
 
 ### FastAPI factory
@@ -108,8 +113,8 @@ fusion-core is a **single-process, single-engine client library**, not a cluster
 | Capability | gateway implementation | core action |
 |------------|------------------------|-------------|
 | Endpoint registry / routing / failover | `discovery` (node register/health/evict) + `router/engine` | `default_mlx_base_url()` reads `FUSION_MLX_URL`; point at gateway for multi-node |
-| Circuit breaker | `middleware/retry` RetryChat | `with_retry(disable=True)` disables core retry, hands to gateway breaker, avoids double-retry |
-| Per-endpoint concurrency gate | `middleware/budget` BudgetBlock | core pool adds no concurrency cap |
+| Circuit breaker | `router/circuit_breaker.go:CircuitBreaker` | `with_retry(disable=True)` disables core retry, hands to gateway breaker, avoids double-retry |
+| Per-endpoint concurrency gate | `router/engine.go:MaxConcurrent` | core pool adds no concurrency cap |
 | Model registry model→endpoint | `router` routes by model | caller passes model, gateway resolves endpoint; core holds no topology |
 | Metrics (Prometheus) | `observability/metrics` (circuitBreakerState/Trips, routeDecisions, requestDuration, requestTotal) | core does not double-instrument (`http_client` metrics callback kept for single-process use) |
 | Agent scheduling (slots/queue/cancel) | routing-layer concurrency governance | scheduling is business orchestration → fusion-cowork / agent-studio |
@@ -158,7 +163,7 @@ return LLMResult(content=result.content, model=result.model)
 ## Testing
 
 ```bash
-pytest tests/ -m "not integration"   # unit: 156 passed, 1 skipped
+pytest tests/ -m "not integration"   # unit: 164 passed, 1 skipped
 pytest tests/ -m integration          # real fusion-mlx engine (starts/stops its own)
 ruff check . && ruff format --check . # lint clean
 ```

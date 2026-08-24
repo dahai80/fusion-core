@@ -303,7 +303,7 @@ class TestRetryPaths:
             max_retries=1,
             retry_delay=0,
         )
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(StreamError):
             async for _ in client.stream_chat(model="m", messages=[{"role": "user", "content": "x"}]):
                 pass
         await client.close()
