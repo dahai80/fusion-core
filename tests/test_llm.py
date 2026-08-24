@@ -104,19 +104,18 @@ class TestStream:
         await client.close()
 
     async def test_stream_error_carries_delivered_envelope(self):
-        sse = 'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
-        state = {"sent_ok": False}
+        class _SeveredTransport(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request):
+                async def body():
+                    yield b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
+                    raise httpx.RemoteProtocolError("connection severed mid-stream")
 
-        def handler(request):
-            if not state["sent_ok"]:
-                state["sent_ok"] = True
-                return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
-            raise httpx.RemoteProtocolError("connection severed mid-stream")
+                return httpx.Response(200, content=body(), headers={"content-type": "text/event-stream"})
 
         client = FusionMLXClient(
             base_url="http://test/v1",
             api_key="k",
-            transport=httpx.MockTransport(handler),
+            transport=_SeveredTransport(),
             max_retries=0,
         )
         collected = []

@@ -41,7 +41,7 @@ def load_settings(path: str | Path | None = None) -> dict:
     try:
         mtime = p.stat().st_mtime
     except FileNotFoundError:
-        raise FileNotFoundError(f"settings file not found: {key}")
+        raise FileNotFoundError(f"settings file not found: {key}") from None
     cached = _SETTINGS_CACHE.get(key)
     if cached is not None:
         data, cached_mtime = cached
