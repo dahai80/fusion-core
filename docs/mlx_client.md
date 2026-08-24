@@ -13,7 +13,7 @@ Unified MLX inference client — chat, embedding, streaming. Retry delegated to 
 
 ```python
 class StreamError(RuntimeError):
-    delivered: int      # chars already yielded to caller
+    delivered: int  # chars already yielded to caller
     resume_offset: int  # where to resume (== delivered for char streams)
 ```
 
@@ -177,6 +177,7 @@ Factory. `backend` is **keyword-only** (I11 — prevents positional `create_asyn
 
 ```python
 from fusion_core import create_async_client
+
 client = create_async_client(base_url="http://localhost:11434/v1", api_key="k", model="qwen2.5-7b")
 ```
 

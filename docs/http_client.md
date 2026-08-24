@@ -21,8 +21,10 @@ httpx async connection pool + retry. Single source of truth for retry codes/exce
 ## RetryExhaustedError / RetryTimeoutError
 
 ```python
-class RetryExhaustedError(httpx.HTTPStatusError): ...   # retries used up on a retriable status
-class RetryTimeoutError(TimeoutError): ...              # total_deadline exceeded
+class RetryExhaustedError(httpx.HTTPStatusError): ...  # retries used up on a retriable status
+
+
+class RetryTimeoutError(TimeoutError): ...  # total_deadline exceeded
 ```
 
 `RetryExhaustedError` subclasses `HTTPStatusError` (R9) so existing `except HTTPStatusError` callers keep working, but callers can now distinguish "retried-out 503" (`RetryExhaustedError`) from "first-hit 401" (plain `HTTPStatusError`).
@@ -42,6 +44,7 @@ Returns a pooled `AsyncClient` for `base_url` on the **current event loop**. Poo
 
 ```python
 from fusion_core import get_async_client
+
 client = get_async_client("http://localhost:11434/v1")
 ```
 
@@ -63,6 +66,7 @@ H3/E4: probes fusion-gateway's `/readyz` to confirm the gateway is reachable **a
 
 ```python
 from fusion_core import gateway_circuit_breaker_ok
+
 if await gateway_circuit_breaker_ok():
     ...  # safe to hand retry to gateway
 ```
@@ -103,8 +107,8 @@ Outcomes:
 
 ```python
 from fusion_core import with_retry
-resp = await with_retry(lambda: client.post("/chat/completions", json=payload),
-                        retries=2, total_deadline=30.0)
+
+resp = await with_retry(lambda: client.post("/chat/completions", json=payload), retries=2, total_deadline=30.0)
 ```
 
 ## close_all / close_all_sync
@@ -128,8 +132,9 @@ Per-`base_url` host:port counters: `calls`, `errors`, `retries`, `total_latency_
 
 ```python
 from fusion_core import set_metrics_callback, get_metrics_snapshot
-set_metrics_callback(lambda m: print(m))   # {"label": "localhost:11434", "status": 200, ...}
-snap = get_metrics_snapshot()               # {"localhost:11434": {"calls": 42, ...}}
+
+set_metrics_callback(lambda m: print(m))  # {"label": "localhost:11434", "status": 200, ...}
+snap = get_metrics_snapshot()  # {"localhost:11434": {"calls": 42, ...}}
 ```
 
 ## Design notes

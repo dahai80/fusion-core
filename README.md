@@ -73,6 +73,7 @@ resp = await client.chat(messages=[...], total_deadline=30.0)
 
 ```python
 from fusion_core import with_retry
+
 # when fusion-gateway's circuit breaker owns retry, disable core's own retry.
 # verify_gateway=True probes gateway /readyz first; if the breaker is open or
 # the gateway is unreachable, core falls back to its own retry (H3/E4 — no
@@ -94,9 +95,9 @@ install_auth(app, api_keys=["secret"])  # request_id is outermost middleware; 40
 
 ```python
 resp = await client.embed("hello world", model="bge-m3")
-print(resp.vector)        # single input → .vector
+print(resp.vector)  # single input → .vector
 batch = await client.embed(["a", "b"], model="bge-m3")
-print(batch.vectors)      # batch input → .vectors list
+print(batch.vectors)  # batch input → .vectors list
 ```
 
 ## Design principles

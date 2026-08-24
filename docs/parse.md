@@ -42,6 +42,7 @@ Raises:
 
 ```python
 from fusion_core import parse_llm_json
+
 data = parse_llm_json('```json\n{"a": 1}\n```')  # {"a": 1}
 ```
 
@@ -58,6 +59,7 @@ Raises:
 
 ```python
 from fusion_core import parse_llm_json_safe
+
 data = parse_llm_json_safe(bad_text, default={"items": []})
 ```
 
@@ -75,6 +77,7 @@ Raises:
 
 ```python
 from fusion_core import parse_llm_json_lenient
+
 data = parse_llm_json_lenient('Here is the result: {"score": 9}. Done.')  # {"score": 9}
 ```
 

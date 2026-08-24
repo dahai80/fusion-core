@@ -28,6 +28,7 @@ Configures logger `name`. Idempotent: if a non-`NullHandler` handler already exi
 
 ```python
 from fusion_core import setup_logging
+
 setup_logging("fusion_core", level="DEBUG", json_format=True, log_file="/tmp/svc.log")
 ```
 
@@ -41,6 +42,7 @@ Thin `logging.getLogger(name)`. Use for child loggers (`fusion_core.mlx_client` 
 
 ```python
 from fusion_core import get_logger
+
 log = get_logger(__name__)
 log.info("chat ok model=%s", model)
 ```

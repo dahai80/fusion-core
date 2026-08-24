@@ -72,6 +72,7 @@ resp = await client.chat(messages=[...], total_deadline=30.0)
 
 ```python
 from fusion_core import with_retry
+
 # 当 fusion-gateway 熔断器接管重试时，关掉 core 自身重试。
 # verify_gateway=True 先探活 gateway /readyz；熔断开或 gateway 不可达，
 # core 回退自身重试（H3/E4——不留能力真空）。
@@ -92,9 +93,9 @@ install_auth(app, api_keys=["secret"])  # request_id 自动为最外层中间件
 
 ```python
 resp = await client.embed("hello world", model="bge-m3")
-print(resp.vector)        # 单输入 → .vector
+print(resp.vector)  # 单输入 → .vector
 batch = await client.embed(["a", "b"], model="bge-m3")
-print(batch.vectors)      # 批量输入 → .vectors 列表
+print(batch.vectors)  # 批量输入 → .vectors 列表
 ```
 
 ## 设计原则

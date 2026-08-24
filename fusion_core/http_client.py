@@ -218,7 +218,9 @@ async def with_retry(
                 resp = await fn()
                 return resp
         else:
-            logger.info("with_retry disable=True: caller assumes upstream (gateway) handles retry/circuit-breaking; zero core resilience")
+            logger.info(
+                "with_retry disable=True: caller assumes upstream (gateway) handles retry/circuit-breaking; zero core resilience"
+            )
             resp = await fn()
             return resp
     retry_codes = frozenset(retry_on) if retry_on is not None else RETRY_STATUS

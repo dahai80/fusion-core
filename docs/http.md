@@ -32,6 +32,7 @@ Builds a `FastAPI(title=name, version=version)`.
 
 ```python
 from fusion_core.http import create_app, install_auth
+
 app = create_app("my-svc", cors_origins=["https://example.com"], cors_credentials=True)
 install_auth(app, api_keys=["secret"])
 ```

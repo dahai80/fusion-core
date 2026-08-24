@@ -261,9 +261,7 @@ class TestGatewayCircuitBreakerProbe:
         hc.gateway_circuit_breaker_ok = fake_probe
         try:
             with pytest.raises(RetryExhaustedError):
-                await with_retry(
-                    fn, retries=2, initial_backoff=0, retry_on=(503,), disable=True, verify_gateway=True
-                )
+                await with_retry(fn, retries=2, initial_backoff=0, retry_on=(503,), disable=True, verify_gateway=True)
         finally:
             hc.gateway_circuit_breaker_ok = orig
         assert calls["n"] == 3, "unsafe gateway must trigger core retry fallback (3 attempts), not 1"

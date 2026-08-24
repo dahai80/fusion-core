@@ -131,10 +131,7 @@ async def test_real_chat_text_total_deadline(started_engine, caplog):
                 total_deadline=30.0,
             )
         assert text, "chat_text returned empty"
-        dropped = [
-            r for r in caplog.records
-            if "total_deadline" in r.getMessage() and "dropping" in r.getMessage()
-        ]
+        dropped = [r for r in caplog.records if "total_deadline" in r.getMessage() and "dropping" in r.getMessage()]
         assert not dropped, "total_deadline must not be logged as dropped (R5)"
     finally:
         await client.close()

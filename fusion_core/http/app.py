@@ -179,9 +179,7 @@ def install_auth(app: FastAPI, *, api_keys: list[str] | None = None) -> None:
     # Remove the existing request_id entry and re-add it LAST so it sits outside auth
     # and 401 responses carry the SAME id the downstream request_id middleware would
     # have assigned (H1: previously auth's uuid fallback produced a divergent id).
-    app.user_middleware = [
-        m for m in app.user_middleware if m.cls is not _RequestIdASGIMiddleware
-    ]
+    app.user_middleware = [m for m in app.user_middleware if m.cls is not _RequestIdASGIMiddleware]
     app.add_middleware(_RequestIdASGIMiddleware)
     # Force rebuild of the cached middleware stack so the new order takes effect
     # even if the stack was already built (e.g. TestClient startup).
