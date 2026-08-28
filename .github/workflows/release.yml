@@ -58,7 +58,8 @@ jobs:
         with:
           generate_release_notes: true
           draft: false
-          prerelease: false
+          # rc/alpha/beta tags ship as prereleases; final releases stay stable.
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
           files: |
             dist/*.whl
             dist/*.tar.gz

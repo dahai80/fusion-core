@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fusion-core"
-version = "0.1.2"
+version = "0.2.0rc1"
 description = "Fusion-Core — public technical foundation for the Fusion ecosystem (LLM client, JSON parse, config, logging, FastAPI factory)"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
