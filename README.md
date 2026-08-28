@@ -180,4 +180,5 @@ ruff check . && ruff format --check . # lint clean
 
 - Fix plan: `../architecture/venv-fix-0823.md` §5 (client rollout)
 - Audit: `../audit/fusion-audit-all-report.md` Chapter 4 Q1
-- License: Apache-2.0
+- Production-readiness audit: `../audit/fusion-core-audit-result-product-0827.md`
+- License: [Apache-2.0](LICENSE)

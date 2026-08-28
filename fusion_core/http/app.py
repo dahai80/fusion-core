@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hmac
 import logging
+import operator
 import time
 import uuid
+from functools import reduce
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -99,7 +101,13 @@ class _AuthASGIMiddleware:
                 auth_header = v.decode("latin-1")
                 break
         token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else ""
-        if not any(hmac.compare_digest(token, k) for k in self._keys_list):
+        # R2 audit fix: evaluate compare_digest against EVERY key with no
+        # short-circuit (reduce | over all results), so neither key-count nor
+        # token-length leaks through timing. any() short-circuits on the first
+        # match and compare_digest returns early on length mismatch — both are
+        # observable side channels. reduce(operator.or_, ...) forces all keys
+        # to be compared every time (constant-ish time w.r.t. key set).
+        if not reduce(operator.or_, (hmac.compare_digest(token, k) for k in self._keys_list), False):
             # request_id middleware is OUTERMOST (install_auth re-orders), so
             # scope["state"]["request_id"] is already set by it. The outer
             # middleware's send_wrapper also adds the x-request-id response

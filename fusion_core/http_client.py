@@ -303,7 +303,7 @@ async def with_retry(
                     logger.error("with_retry exhausted after %d attempts: %s", retries + 1, exc)
                     raise last_exc from exc
         raise RuntimeError("with_retry exhausted without response or exception")
-    except RetryExhaustedError as exc:
+    except RetryExhaustedError:
         latency = loop.time() - started
         _bump_metrics(
             _metrics_label(_last_resp, None),
@@ -312,7 +312,11 @@ async def with_retry(
             retries=_retries_used,
             error="retry_exhausted",
         )
-        raise exc from exc
+        # R3 audit fix: bare `raise` re-raises the caught exc with its natural
+        # __context__ intact — `raise exc from exc` set __cause__ to the exc
+        # itself (self-referential), producing a redundant "direct cause of
+        # itself" chain that confuses log/alert aggregation.
+        raise
     except (*RETRY_EXCEPTIONS, RetryTimeoutError, RuntimeError) as exc:
         latency = loop.time() - started
         _bump_metrics(
@@ -322,7 +326,7 @@ async def with_retry(
             retries=_retries_used,
             error=type(exc).__name__,
         )
-        raise exc from exc
+        raise
 
 
 def _jittered(backoff: float) -> float:

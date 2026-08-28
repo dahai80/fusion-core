@@ -178,4 +178,5 @@ ruff check . && ruff format --check . # lint clean
 
 - 修复方案：`../architecture/venv-fix-0823.md` §5（客户端推广）
 - 审计：`../audit/fusion-audit-all-report.md` 第四章 Q1
-- License：Apache-2.0
+- 生产商用评审：`../audit/fusion-core-audit-result-product-0827.md`
+- License：[Apache-2.0](LICENSE)

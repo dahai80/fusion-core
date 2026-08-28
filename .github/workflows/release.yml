@@ -43,9 +43,22 @@ jobs:
           pip install -e ".[test]"
           pytest tests/ -m "not integration" -q
 
+      - name: Build sdist + wheel
+        # R4 audit fix: ship built distributions so downstream enterprises can
+        # install via wheel (correct baked-in metadata) instead of editable
+        # installs whose egg-info drifts from pyproject on version bumps.
+        run: |
+          pip install build
+          python -m build
+          echo "Built artifacts:"
+          ls -la dist/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           draft: false
           prerelease: false
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
