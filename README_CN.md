@@ -4,7 +4,7 @@
 >
 > [English](README.md)
 
-fusion-core 是 Fusion 生态（"一核九端"）20+ Python 领域项目共享的公共技术底座。它消除 7+ 套重复 LLM 客户端与 10+ 份 `_parse_json`，为每个原语提供一份经过测试的实现：LLM 客户端、JSON 解析、配置加载、日志、httpx 连接池+重试、FastAPI 工厂、prompt 模板管理。
+fusion-core 是 Fusion 生态（"一核九端"）20+ Python 领域项目共享的公共技术底座。它消除 7+ 套重复 LLM 客户端与 10+ 份 `_parse_json`，为每个原语提供一份经过测试的实现：LLM 客户端、JSON 解析、配置加载、日志、httpx 连接池+重试、FastAPI 工厂、prompt 模板管理、零信任 guard 客户端。
 
 不依赖任何 Fusion 专属内容。`import fusion_core` 不触发任何 I/O（不读 env、不读文件、不建连接）——任何地方安全导入。
 
@@ -18,7 +18,7 @@ pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 
 要求：Python >=3.12。
 
-## 7 模块速查
+## 8 模块速查
 
 | 模块 | 关键符号 | 用途 |
 |------|----------|------|
@@ -29,6 +29,7 @@ pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 | `http_client` | `get_async_client`（per-loop 连接池，`OrderedDict` LRU 上限 8，驱逐只动同 loop 键）、`gateway_circuit_breaker_ok`（探活 gateway `/readyz`，H3/E4）、`with_retry`（full jitter，`disable=` + `verify_gateway=` 安全关重试交 gateway 熔断，`total_deadline=` 总预算；耗尽抛 `RetryExhaustedError`/`RetryTimeoutError`）、`close_all`、`close_all_sync`、`set_metrics_callback`、`get_metrics_snapshot`、`reset_metrics` | httpx async 客户端池 + 重试（重试码/异常单一来源 `RETRY_STATUS`/`RETRY_EXCEPTIONS`） |
 | `http` | `create_app`、`install_auth`、`standard_error_handler` | FastAPI 应用工厂 + 纯 ASGI 中间件（`install_auth` 重排 `user_middleware` 使 request_id 最外层——401 带同一 id，H1/E1；SSE 不截断；认证密钥封进中间件实例不落 `app.state`；422/500 同等脱敏；白名单路径 `rstrip` 规范化） |
 | `prompt` | `PromptManager` | prompt 模板管理（只管引擎不含领域内容，缺失目录直接抛 `FileNotFoundError`；**mtime 闸门缓存**——运行期改盘即生效（mtime 变即失效重读），`clear_cache()` 强制全刷新，E3） |
+| `guard_client` | `FusionGuardClient`、`GuardVerdict`、`GuardRule`、`RedactResult`、`ChainVerification`、`AllChainsVerification`、`GuardError` + 8 个类型化子类 | **fusion-guard**（零信任动作授权守护进程）的纯 Python UDS JSON-RPC 2.0 客户端。换行帧分（`0x0A`，1 MiB 上限），默认 2 s 超时，逐调用断线重连单次重试。方法与 `guard.ping` / `guard.evaluate` / `guard.rule.list` / `guard.redact` / `guard.reveal` / `guard.confirm` / `guard.tcc.status` / `guard.tcc.events` / `guard.audit.verify` 一一对应。**拦截判定是结果而非错误**（E5）——`evaluate()` 返回 `GuardVerdict(action="block")`；RPC 错误码映射为类型化异常（`GuardUnauthorizedError` -32001、`GuardRateLimitError` -32002、`StaleEpochError` -32003 带 `caller_epoch`/`guard_epoch`、`GuardEngineError` -32010）。默认 socket `/tmp/fusion-guard.sock` 在调用时惰性从 `FUSION_GUARD_SOCK` 解析（导入即零 I/O）。上下文管理器生命周期；原生 `fg-pyo3` 仍为可选快速通道 |
 
 ## 用法
 
@@ -87,6 +88,22 @@ from fusion_core.http import create_app, install_auth
 # cors_credentials 默认 False；"*" + credentials=True 抛 ValueError
 app = create_app("my-svc", cors_origins=["https://example.com"], cors_credentials=True)
 install_auth(app, api_keys=["secret"])  # request_id 自动为最外层中间件，401 也带 id
+```
+
+### 零信任 guard 客户端（fusion-guard）
+
+```python
+from fusion_core import FusionGuardClient
+
+# 默认 socket /tmp/fusion-guard.sock；用 FUSION_GUARD_SOCK 或构造参数覆盖。
+with FusionGuardClient() as guard:
+    verdict = guard.evaluate("rm -rf /", caller_epoch=guard.ping()["rules_epoch"])
+    if verdict.action == "block":
+        # 拦截是正常判定，不是异常——查 .action（E5）。
+        log.warning("被拦截：%s（风险 %s）", verdict.reason, verdict.risk_level)
+    rules, epoch = guard.list_rules()
+    redacted = guard.redact("my SSN is 123-45-6789")
+    chain = guard.audit_verify()  # 审计/tcc/rules/dead_letter 防篡改链
 ```
 
 ### 嵌入

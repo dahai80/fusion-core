@@ -25,6 +25,13 @@ def default_gateway_base_url() -> str:
     return os.environ.get("FUSION_GATEWAY_URL", f"http://localhost:{DEFAULT_GATEWAY_PORT}")
 
 
+DEFAULT_GUARD_SOCK = "/tmp/fusion-guard.sock"
+
+
+def default_guard_sock() -> str:
+    return os.environ.get("FUSION_GUARD_SOCK", DEFAULT_GUARD_SOCK)
+
+
 def get_env(key: str, default: Any = None, *, cast: type = str) -> Any:
     raw = os.environ.get(key)
     if raw is None or raw == "":

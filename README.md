@@ -4,7 +4,7 @@
 >
 > [中文文档](README_CN.md)
 
-fusion-core is the common technical base shared by the 20+ Python domain projects in the Fusion ecosystem ("一核九端"). It eliminates 7+ duplicate LLM clients and 10+ copies of `_parse_json` by providing one well-tested implementation of each primitive: an LLM client, JSON parsing, config loading, logging, an httpx connection pool with retry, a FastAPI factory, and prompt-template management.
+fusion-core is the common technical base shared by the 20+ Python domain projects in the Fusion ecosystem ("一核九端"). It eliminates 7+ duplicate LLM clients and 10+ copies of `_parse_json` by providing one well-tested implementation of each primitive: an LLM client, JSON parsing, config loading, logging, an httpx connection pool with retry, a FastAPI factory, prompt-template management, and a zero-trust guard client.
 
 It depends on nothing Fusion-specific. `import fusion_core` triggers no I/O (no env read, no file read, no network connection) — safe to import anywhere.
 
@@ -18,7 +18,7 @@ pip install -e "fusion-core[fastapi]" # + fastapi, uvicorn, pydantic
 
 Requirements: Python >=3.12.
 
-## 7 modules at a glance
+## 8 modules at a glance
 
 | Module | Key symbols | Purpose |
 |--------|-------------|---------|
@@ -29,6 +29,7 @@ Requirements: Python >=3.12.
 | `http_client` | `get_async_client` (per-loop connection pool, `OrderedDict` LRU cap 8, evicts only same-loop keys), `gateway_circuit_breaker_ok` (probes gateway `/readyz`, H3/E4), `with_retry` (full jitter; `disable=` + `verify_gateway=` to hand retry off to gateway circuit breaker safely; `total_deadline=` end-to-end budget; exhausted → `RetryExhaustedError` / `RetryTimeoutError`), `close_all`, `close_all_sync`, `set_metrics_callback`, `get_metrics_snapshot`, `reset_metrics` | httpx async client pool + retry. Single source of truth for retry codes/exceptions: `RETRY_STATUS` / `RETRY_EXCEPTIONS` |
 | `http` | `create_app`, `install_auth`, `standard_error_handler` | FastAPI app factory + pure-ASGI middleware (`install_auth` re-orders `user_middleware` so request_id is outermost — 401 carries the same id, H1/E1; SSE not truncated; auth keys encapsulated in the middleware instance, never on `app.state`; 422 and 500 sanitized equally; whitelist paths `rstrip`-normalized) |
 | `prompt` | `PromptManager` | Prompt-template management (engine only, no domain content; missing dir raises `FileNotFoundError`; **mtime-gated cache** — on-disk edits are picked up at runtime (mtime change invalidates the entry), `clear_cache()` forces a full refresh (E3)) |
+| `guard_client` | `FusionGuardClient`, `GuardVerdict`, `GuardRule`, `RedactResult`, `ChainVerification`, `AllChainsVerification`, `GuardError` + 8 typed subclasses | Pure-Python UDS JSON-RPC 2.0 client for **fusion-guard** (the zero-trust action-authorization daemon). Newline-framed (`0x0A`, 1 MiB cap), 2 s default timeout, per-call reconnect-on-drop with one retry. Methods map 1:1 to `guard.ping` / `guard.evaluate` / `guard.rule.list` / `guard.redact` / `guard.reveal` / `guard.confirm` / `guard.tcc.status` / `guard.tcc.events` / `guard.audit.verify`. **Block verdicts are results, not errors** (E5) — `evaluate()` returns `GuardVerdict(action="block")`; RPC error codes map to typed exceptions (`GuardUnauthorizedError` -32001, `GuardRateLimitError` -32002, `StaleEpochError` -32003 carrying `caller_epoch`/`guard_epoch`, `GuardEngineError` -32010). Default socket `/tmp/fusion-guard.sock` resolved lazily at call time from `FUSION_GUARD_SOCK` (import = no I/O). Context-manager lifecycle; native `fg-pyo3` stays an optional fast path |
 
 ## Usage
 
@@ -89,6 +90,22 @@ from fusion_core.http import create_app, install_auth
 # cors_credentials defaults False; "*" with credentials=True raises ValueError
 app = create_app("my-svc", cors_origins=["https://example.com"], cors_credentials=True)
 install_auth(app, api_keys=["secret"])  # request_id is outermost middleware; 401 also carries it
+```
+
+### Zero-trust guard client (fusion-guard)
+
+```python
+from fusion_core import FusionGuardClient
+
+# default socket /tmp/fusion-guard.sock; override via FUSION_GUARD_SOCK or ctor.
+with FusionGuardClient() as guard:
+    verdict = guard.evaluate("rm -rf /", caller_epoch=guard.ping()["rules_epoch"])
+    if verdict.action == "block":
+        # a block is a normal verdict, NOT an exception — inspect .action (E5).
+        log.warning("blocked: %s (risk %s)", verdict.reason, verdict.risk_level)
+    rules, epoch = guard.list_rules()
+    redacted = guard.redact("my SSN is 123-45-6789")
+    chain = guard.audit_verify()  # tamper-evidence across audit/tcc/rules/dead_letter
 ```
 
 ### Embeddings
