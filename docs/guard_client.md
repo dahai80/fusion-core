@@ -72,14 +72,14 @@ Context manager connects on entry, closes on exit. `close()` is idempotent. Outs
 ```python
 @dataclass
 class GuardVerdict:
-    action: str                       # allow | preview | redact | block
-    risk_level: str                   # l1 | l2 | l3 | l4
+    action: str  # allow | preview | redact | block
+    risk_level: str  # l1 | l2 | l3 | l4
     reason: str
-    stage: str = ""                   # regex | ast | semantic
+    stage: str = ""  # regex | ast | semantic
     requires_approval: bool = False
     redacted_content: str | None = None
     seatbelt_required: bool = False
-    action_id: str | None = None      # UUID string for confirm(); None or null
+    action_id: str | None = None  # UUID string for confirm(); None or null
     verdict_epoch: int = 0
     verdict_ttl_secs: int = 0
     inferred_category: str = ""
@@ -95,14 +95,14 @@ class GuardRule:
     action: str = "allow"
     risk_level: str = "l1"
     reason: str = ""
-    scope: str = "content"            # command | content | network | filesystem
+    scope: str = "content"  # command | content | network | filesystem
 ```
 
 ```python
 @dataclass
 class RedactResult:
     redacted_content: str
-    token_map_id: str | None = None   # pass to reveal() to restore
+    token_map_id: str | None = None  # pass to reveal() to restore
 ```
 
 ```python
@@ -119,11 +119,11 @@ class ChainVerification:
 ```python
 @dataclass
 class AllChainsVerification:
-    audit: ChainVerification = ...        # default_factory
+    audit: ChainVerification = ...  # default_factory
     tcc: ChainVerification = ...
     rules: ChainVerification = ...
     dead_letter: ChainVerification = ...
-    tampered: bool = False                # true if any chain tampered
+    tampered: bool = False  # true if any chain tampered
 ```
 
 Missing chain sub-objects in the RPC result default to an empty `ChainVerification()` (no KeyError).
@@ -151,7 +151,7 @@ All RPC errors map to a typed subclass of `GuardError`. Unknown codes fall back 
 try:
     verdict = guard.evaluate(content, caller_epoch=my_epoch)
 except StaleEpochError as e:
-    rules, my_epoch = guard.list_rules()   # refresh
+    rules, my_epoch = guard.list_rules()  # refresh
     verdict = guard.evaluate(content, caller_epoch=my_epoch)
 ```
 
@@ -171,12 +171,12 @@ JSON-RPC 2.0 over Unix Domain Socket, **newline-framed** (`0x0A`). Matches fusio
 ```python
 from fusion_core import FusionGuardClient, StaleEpochError
 
-with FusionGuardClient() as guard:           # FUSION_GUARD_SOCK or /tmp/fusion-guard.sock
+with FusionGuardClient() as guard:  # FUSION_GUARD_SOCK or /tmp/fusion-guard.sock
     rules, epoch = guard.list_rules()
     try:
         v = guard.evaluate("rm -rf /", caller_epoch=epoch)
     except StaleEpochError as e:
-        rules, epoch = guard.list_rules()    # refresh, then retry
+        rules, epoch = guard.list_rules()  # refresh, then retry
         v = guard.evaluate("rm -rf /", caller_epoch=epoch)
 
     if v.action == "block":
@@ -186,7 +186,7 @@ with FusionGuardClient() as guard:           # FUSION_GUARD_SOCK or /tmp/fusion-
         # ... store red.redacted_content, later guard.reveal(content, red.token_map_id)
 
     chain = guard.audit_verify()
-    assert not chain.tampered                # tamper-evidence across 4 chains
+    assert not chain.tampered  # tamper-evidence across 4 chains
 ```
 
 ## Design notes
