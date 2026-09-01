@@ -17,6 +17,16 @@ class _JsonFormatter(_stdlib_logging.Formatter):
             "name": record.name,
             "msg": record.getMessage(),
         }
+        try:
+            from fusion_core.tenant.context import current as _tenant_current
+
+            ctx = _tenant_current()
+        except Exception:
+            ctx = None
+        if ctx is not None:
+            payload["tenant_id"] = ctx.tenant_id
+            if ctx.user_id is not None:
+                payload["user_id"] = ctx.user_id
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return _json.dumps(payload, ensure_ascii=False)
