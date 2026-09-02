@@ -66,6 +66,26 @@ from fusion_core.parse import (  # noqa: E402
 )
 from fusion_core.prompt import PromptManager  # noqa: E402
 
+try:
+    from fusion_core.tenant import (  # noqa: F401
+        TenantContext,
+        TenantContextError,
+        TenantMiddleware,
+        current,
+        decode_jwt_claims,
+        from_mapping,
+        has_scope,
+        install_tenant_middleware,
+        reset,
+        set_context,
+        tenant_context_from_token,
+    )
+
+    _tenant_available = True
+except ImportError:
+    _tenant_available = False
+    _logger.debug("fusion_core.tenant unavailable (missing dep?)")
+
 __all__ = [
     "__version__",
     "ParseError",
@@ -118,3 +138,20 @@ try:
     __all__.extend(["create_app", "install_auth", "standard_error_handler"])
 except ImportError:
     _logger.debug("fastapi not installed; fusion_core.http factory unavailable")
+
+if _tenant_available:
+    __all__.extend(
+        [
+            "TenantContext",
+            "TenantContextError",
+            "TenantMiddleware",
+            "current",
+            "decode_jwt_claims",
+            "from_mapping",
+            "has_scope",
+            "install_tenant_middleware",
+            "reset",
+            "set_context",
+            "tenant_context_from_token",
+        ]
+    )
