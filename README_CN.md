@@ -18,7 +18,7 @@ pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 
 要求：Python >=3.12。
 
-## 8 模块速查
+## 9 模块速查
 
 | 模块 | 关键符号 | 用途 |
 |------|----------|------|
@@ -30,6 +30,7 @@ pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 | `http` | `create_app`、`install_auth`、`standard_error_handler` | FastAPI 应用工厂 + 纯 ASGI 中间件（`install_auth` 重排 `user_middleware` 使 request_id 最外层——401 带同一 id，H1/E1；SSE 不截断；认证密钥封进中间件实例不落 `app.state`；422/500 同等脱敏；白名单路径 `rstrip` 规范化） |
 | `prompt` | `PromptManager` | prompt 模板管理（只管引擎不含领域内容，缺失目录直接抛 `FileNotFoundError`；**mtime 闸门缓存**——运行期改盘即生效（mtime 变即失效重读），`clear_cache()` 强制全刷新，E3） |
 | `guard_client` | `FusionGuardClient`、`GuardVerdict`、`GuardRule`、`RedactResult`、`ChainVerification`、`AllChainsVerification`、`GuardError` + 8 个类型化子类 | **fusion-guard**（零信任动作授权守护进程）的纯 Python UDS JSON-RPC 2.0 客户端。换行帧分（`0x0A`，1 MiB 上限），默认 2 s 超时，逐调用断线重连单次重试。方法与 `guard.ping` / `guard.evaluate` / `guard.rule.list` / `guard.redact` / `guard.reveal` / `guard.confirm` / `guard.tcc.status` / `guard.tcc.events` / `guard.audit.verify` 一一对应。**拦截判定是结果而非错误**（E5）——`evaluate()` 返回 `GuardVerdict(action="block")`；RPC 错误码映射为类型化异常（`GuardUnauthorizedError` -32001、`GuardRateLimitError` -32002、`StaleEpochError` -32003 带 `caller_epoch`/`guard_epoch`、`GuardEngineError` -32010）。默认 socket `/tmp/fusion-guard.sock` 在调用时惰性从 `FUSION_GUARD_SOCK` 解析（导入即零 I/O）。上下文管理器生命周期；原生 `fg-pyo3` 仍为可选快速通道 |
+| `tenant` | `TenantContext`、`current`、`set_context`、`reset`、`has_scope`、`from_mapping`、`decode_jwt_claims`、`tenant_context_from_token`、`TenantMiddleware`、`install_tenant_middleware`、`get_tenant_dep` | L1 多租户织物。`TenantContext`（frozen-slots dataclass，基于 `contextvars`）按请求作用域携带 `tenant_id`/`user_id`/`role`/`jti`/`scopes`；`TenantMiddleware` 是**失败即关闭**的 ASGI 中间件——豁免路径跳过、缺 `X-Tenant-Id` → 401、JWT `tid ≠ X-Tenant-Id` → 401、`require_jwt=True` 时缺 bearer → 401，请求期间绑定上下文，`finally` 中 `reset()`（无跨请求泄漏）。`jwt_utils` 做 base64url 解码 + `exp` 校验，**不依赖 PyJWT、不做签名校验**——真实签名校验通过 `verify_jwt` 注入钩子完成（落在 fusion-identity）。`_JsonFormatter` 从 `current()` 自动注入 `tenant_id`/`user_id` 到日志记录。三语镜像锚点（Python 变体；Rust/Swift 变体落各自仓） |
 
 ## 用法
 

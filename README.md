@@ -18,7 +18,7 @@ pip install -e "fusion-core[fastapi]" # + fastapi, uvicorn, pydantic
 
 Requirements: Python >=3.12.
 
-## 8 modules at a glance
+## 9 modules at a glance
 
 | Module | Key symbols | Purpose |
 |--------|-------------|---------|
@@ -30,6 +30,7 @@ Requirements: Python >=3.12.
 | `http` | `create_app`, `install_auth`, `standard_error_handler` | FastAPI app factory + pure-ASGI middleware (`install_auth` re-orders `user_middleware` so request_id is outermost — 401 carries the same id, H1/E1; SSE not truncated; auth keys encapsulated in the middleware instance, never on `app.state`; 422 and 500 sanitized equally; whitelist paths `rstrip`-normalized) |
 | `prompt` | `PromptManager` | Prompt-template management (engine only, no domain content; missing dir raises `FileNotFoundError`; **mtime-gated cache** — on-disk edits are picked up at runtime (mtime change invalidates the entry), `clear_cache()` forces a full refresh (E3)) |
 | `guard_client` | `FusionGuardClient`, `GuardVerdict`, `GuardRule`, `RedactResult`, `ChainVerification`, `AllChainsVerification`, `GuardError` + 8 typed subclasses | Pure-Python UDS JSON-RPC 2.0 client for **fusion-guard** (the zero-trust action-authorization daemon). Newline-framed (`0x0A`, 1 MiB cap), 2 s default timeout, per-call reconnect-on-drop with one retry. Methods map 1:1 to `guard.ping` / `guard.evaluate` / `guard.rule.list` / `guard.redact` / `guard.reveal` / `guard.confirm` / `guard.tcc.status` / `guard.tcc.events` / `guard.audit.verify`. **Block verdicts are results, not errors** (E5) — `evaluate()` returns `GuardVerdict(action="block")`; RPC error codes map to typed exceptions (`GuardUnauthorizedError` -32001, `GuardRateLimitError` -32002, `StaleEpochError` -32003 carrying `caller_epoch`/`guard_epoch`, `GuardEngineError` -32010). Default socket `/tmp/fusion-guard.sock` resolved lazily at call time from `FUSION_GUARD_SOCK` (import = no I/O). Context-manager lifecycle; native `fg-pyo3` stays an optional fast path |
+| `tenant` | `TenantContext`, `current`, `set_context`, `reset`, `has_scope`, `from_mapping`, `decode_jwt_claims`, `tenant_context_from_token`, `TenantMiddleware`, `install_tenant_middleware`, `get_tenant_dep` | L1 multi-tenant fabric. `TenantContext` (frozen-slots dataclass over `contextvars`) carries `tenant_id`/`user_id`/`role`/`jti`/`scopes` request-scoped; `TenantMiddleware` is a **fail-closed** ASGI middleware — exempt paths skip, missing `X-Tenant-Id` → 401, JWT `tid ≠ X-Tenant-Id` → 401, missing bearer when `require_jwt=True` → 401, binds context for the request then `reset()` in `finally` (no cross-request leak). `jwt_utils` does base64url decode + `exp` check with **no PyJWT dependency, no signature verify** — real signature verification is injected via the `verify_jwt` hook (lives in fusion-identity). `_JsonFormatter` auto-injects `tenant_id`/`user_id` from `current()` into log records. Trilingual mirror anchor (Python variant; Rust/Swift variants land in their own repos) |
 
 ## Usage
 
