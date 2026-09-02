@@ -16,6 +16,7 @@ Per-module API reference for fusion-core. Each doc covers signatures, params, re
 | `http` | [http.md](http.md) | FastAPI app factory + pure-ASGI middleware (request_id, auth, 422/500 sanitize) |
 | `prompt` | [prompt.md](prompt.md) | Prompt template management — permanent cache, `{{var}}` render |
 | `guard_client` | [guard_client.md](guard_client.md) | Pure-Python UDS JSON-RPC client for fusion-guard — zero-trust authorization, typed verdicts/errors |
+| `tenant` | [tenant.md](tenant.md) | L1 multi-tenant fabric — TenantContext over contextvars, fail-closed ASGI middleware, JWT-less claims decode |
 
 ## Conventions
 
