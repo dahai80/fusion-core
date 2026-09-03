@@ -5,6 +5,7 @@ import logging
 import operator
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from functools import reduce
 from typing import Any
 
@@ -17,7 +18,7 @@ from fusion_core import config as _config
 
 logger = logging.getLogger(__name__)
 
-_UNAUTH_PATHS = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
+_UNAUTH_PATHS = frozenset({"/health", "/ready", "/docs", "/openapi.json", "/redoc"})
 
 
 def standard_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -140,7 +141,23 @@ def create_app(
     cors_credentials: bool = False,
     version: str = "0.1.0",
     enable_health: bool = True,
+    readiness_probe: Callable[[], Awaitable[bool]] | None = None,
 ) -> FastAPI:
+    """FastAPI app factory.
+
+    Health probes:
+      - ``/health`` is the **liveness** probe: cheap, dependency-free, returns
+        ``ok`` whenever the process is up and can serve. A load balancer uses
+        this to decide whether to *restart* a dead process.
+      - ``/ready`` is the **readiness** probe: mounted only when
+        ``readiness_probe`` is provided. It runs the async probe (a cheap
+        dependency check — a ``SELECT 1`` / ``PING``, not a full warm-up) and
+        returns ``200 {"status":"ready", ...}`` on truthy or ``503
+        {"status":"not_ready", "error": str}`` on falsy/raise. A load balancer
+        uses this to decide whether to *route traffic* to this instance. When
+        ``readiness_probe`` is ``None`` (default) ``/ready`` is not mounted —
+        back-compat for services that don't need it.
+    """
     app = FastAPI(title=name, version=version)
 
     if cors_origins:
@@ -163,11 +180,43 @@ def create_app(
         async def _health():
             return {"status": "ok", "service": name, "version": version}
 
+    if readiness_probe is not None:
+
+        @app.get("/ready")
+        async def _ready():
+            try:
+                ok = await readiness_probe()
+            except Exception as exc:
+                logger.warning("readiness probe failed service=%s: %s", name, exc)
+                return JSONResponse(
+                    status_code=503,
+                    content={"status": "not_ready", "error": str(exc), "service": name, "version": version},
+                )
+            if not ok:
+                logger.warning("readiness probe not ready service=%s", name)
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "not_ready",
+                        "error": "probe returned false",
+                        "service": name,
+                        "version": version,
+                    },
+                )
+            return {"status": "ready", "service": name, "version": version}
+
     app.add_exception_handler(Exception, standard_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_middleware(_RequestIdASGIMiddleware)
 
-    logger.info("create_app: %s v%s health=%s cors=%s", name, version, enable_health, bool(cors_origins))
+    logger.info(
+        "create_app: %s v%s health=%s ready=%s cors=%s",
+        name,
+        version,
+        enable_health,
+        readiness_probe is not None,
+        bool(cors_origins),
+    )
     return app
 
 
