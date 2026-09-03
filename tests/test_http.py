@@ -196,3 +196,72 @@ class TestInstallAuth:
             assert r.status_code == 401
             r2 = c.get("/protected", headers={"authorization": "bearer secret123"})
             assert r2.status_code == 200
+
+
+class TestReadiness:
+    def test_ready_200_on_truthy_probe(self):
+        async def probe():
+            return True
+
+        app = create_app("svc-ready", readiness_probe=probe)
+        client = pytest.importorskip("starlette.testclient")
+        with client.TestClient(app) as c:
+            r = c.get("/ready")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["status"] == "ready"
+            assert body["service"] == "svc-ready"
+
+    def test_ready_503_on_falsy_probe(self):
+        async def probe():
+            return False
+
+        app = create_app("svc-notready", readiness_probe=probe)
+        client = pytest.importorskip("starlette.testclient")
+        with client.TestClient(app, raise_server_exceptions=False) as c:
+            r = c.get("/ready")
+            assert r.status_code == 503
+            body = r.json()
+            assert body["status"] == "not_ready"
+
+    def test_ready_503_on_probe_raise(self):
+        async def probe():
+            raise RuntimeError("db down")
+
+        app = create_app("svc-probe-err", readiness_probe=probe)
+        client = pytest.importorskip("starlette.testclient")
+        with client.TestClient(app, raise_server_exceptions=False) as c:
+            r = c.get("/ready")
+            assert r.status_code == 503
+            body = r.json()
+            assert body["status"] == "not_ready"
+            assert "db down" in body["error"]
+
+    def test_ready_not_mounted_when_probe_none(self):
+        app = create_app("svc-noprobe")
+        client = pytest.importorskip("starlette.testclient")
+        with client.TestClient(app, raise_server_exceptions=False) as c:
+            r = c.get("/ready")
+            assert r.status_code == 404, "no readiness_probe -> /ready must not be mounted (back-compat)"
+
+    def test_ready_unauth_reachable(self):
+        async def probe():
+            return True
+
+        app = create_app("svc-ready-auth", readiness_probe=probe)
+        install_auth(app, api_keys=["secret123"])
+        client = pytest.importorskip("starlette.testclient")
+        with client.TestClient(app, raise_server_exceptions=False) as c:
+            r = c.get("/ready")
+            assert r.status_code == 200, "/ready must be in _UNAUTH_PATHS, reachable without bearer (issue #21)"
+
+    def test_health_unchanged_with_probe(self):
+        async def probe():
+            return False
+
+        app = create_app("svc-health-check", readiness_probe=probe)
+        client = pytest.importorskip("starlette.testclient")
+        with client.TestClient(app) as c:
+            r = c.get("/health")
+            assert r.status_code == 200
+            assert r.json()["status"] == "ok", "liveness /health must stay ok even when /ready is not_ready"

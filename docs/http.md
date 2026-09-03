@@ -6,7 +6,7 @@ FastAPI app factory + pure-ASGI middleware. SSE-safe, request_id outermost, auth
 
 ## Symbols
 
-- [`create_app(name, *, cors_origins, cors_credentials, version, enable_health)`](#create_app)
+- [`create_app(name, *, cors_origins, cors_credentials, version, enable_health, readiness_probe)`](#create_app)
 - [`install_auth(app, *, api_keys)`](#install_auth)
 - [`standard_error_handler(request, exc)`](#standard_error_handler)
 
@@ -20,13 +20,15 @@ def create_app(
     cors_credentials: bool = False,
     version: str = "0.1.0",
     enable_health: bool = True,
+    readiness_probe: Callable[[], Awaitable[bool]] | None = None,
 ) -> FastAPI
 ```
 
 Builds a `FastAPI(title=name, version=version)`.
 
 - `cors_origins` — if set, adds `CORSMiddleware`. `cors_credentials=True` with `"*"` in origins → `ValueError` (CORS Fetch spec 3.2 forbids credentials with wildcard). `cors_credentials` defaults `False`.
-- `enable_health=True` — registers `GET /health` → `{"status":"ok","service":name,"version":version}`.
+- `enable_health=True` — registers `GET /health` → `{"status":"ok","service":name,"version":version}`. This is the **liveness** probe: cheap, dependency-free, returns `ok` whenever the process is up. A load balancer uses it to decide whether to *restart* a dead process.
+- `readiness_probe` — optional `async () -> bool`. When provided, registers `GET /ready` (the **readiness** probe): runs the probe, returns `200 {"status":"ready","service":name,"version":version}` on truthy, or `503 {"status":"not_ready","error":...,"service":name,"version":version}` on falsy or raised exception. A load balancer uses it to decide whether to *route traffic* — a node whose DB pool is dead returns 503 so traffic drains. When `None` (default) `/ready` is **not** mounted (back-compat). The probe should stay cheap (a `SELECT 1` / `PING`, not a full warm-up); the factory adds no timeout beyond what the probe implements.
 - Registers `standard_error_handler` for `Exception` (500 path) and `validation_error_handler` for `RequestValidationError` (422 path) — both sanitized.
 - Adds `_RequestIdASGIMiddleware` as a middleware (pure ASGI, no `BaseHTTPMiddleware` buffering). Its final outermost position is enforced by `install_auth` (see below) — `create_app` alone leaves request_id innermost if `install_auth` is never called.
 
@@ -35,6 +37,24 @@ from fusion_core.http import create_app, install_auth
 
 app = create_app("my-svc", cors_origins=["https://example.com"], cors_credentials=True)
 install_auth(app, api_keys=["secret"])
+```
+
+### Liveness vs readiness
+
+| Probe | Route | Mounted | LB meaning |
+|-------|-------|---------|------------|
+| Liveness | `/health` | `enable_health=True` (default) | process up → restart if down |
+| Readiness | `/ready` | only when `readiness_probe` passed | deps wired → route traffic; drain if 503 |
+
+```python
+async def deps_ok():
+    # cheap dependency check: a SELECT 1 / PING, not a warm-up
+    return await pg.fetchval("SELECT 1") == 1
+
+
+app = create_app("stateful-svc", readiness_probe=deps_ok)
+# /health -> 200 ok (liveness, always)
+# /ready   -> 200 ready (deps reachable) or 503 not_ready (deps down)
 ```
 
 ## install_auth
@@ -47,7 +67,7 @@ Adds `_AuthASGIMiddleware` with bearer-token auth.
 
 - `api_keys=None` → resolves via `resolve_api_key()`; if none resolvable → `KeyError` (refuses to start unauthenticated — fail visibly).
 - Keys are stored in the middleware instance's private `_keys_list` (I2), **not** on `app.state` — no `app.state._fusion_auth_keys` for third-party middleware to read.
-- Whitelist (`_UNAUTH_PATHS = {"/health","/docs","/openapi.json","/redoc"}`) is `rstrip`-normalized (R7): `/health/` matches `/health`, no spurious 401.
+- Whitelist (`_UNAUTH_PATHS = {"/health","/ready","/docs","/openapi.json","/redoc"}`) is `rstrip`-normalized (R7): `/health/` matches `/health`, no spurious 401. `/ready` is whitelisted so a readiness probe is reachable without auth (LBs don't carry a bearer token).
 - Token check uses `hmac.compare_digest` (constant-time). Failure → 401 JSON `{"error":"Unauthorized","detail":"invalid or missing api key","request_id":...}`, carrying the request_id (so even auth failures stay correlated).
 - **Middleware order enforcement** (H1/E1): `install_auth` adds `_AuthASGIMiddleware`, then removes the existing `_RequestIdASGIMiddleware` entry from `app.user_middleware` and re-adds it **last**. Since `add_middleware` inserts at the front (last added = outermost), this puts request_id outside auth — so 401 responses carry the **same** id the request_id middleware assigned, not a divergent uuid fallback the auth layer would generate. `app.middleware_stack = None` + `app.build_middleware_stack()` force the reorder to take effect even if the stack was already built (e.g. after `TestClient` startup). Regression guard: `test_401_request_id_matches_client_sent_id` asserts a client-sent `x-request-id` is echoed verbatim on the 401.
 
