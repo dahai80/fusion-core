@@ -62,7 +62,7 @@ def from_mapping(data: dict[str, Any]) -> TenantContext
 ```python
 class TenantMiddleware:
     def __init__(self, app, *, exempt_paths: frozenset[str] | None = None,
-                 verify_jwt: Callable[[str], dict] | None = None,
+                 verify_jwt: VerifyJwt | None = None,
                  require_jwt: bool = True) -> None
     async def __call__(self, scope, receive, send) -> None
 
@@ -70,16 +70,19 @@ def install_tenant_middleware(app, *, exempt_paths=None, verify_jwt=None,
                               require_jwt=True) -> None
 ```
 
+`verify_jwt` accepts a **sync or async** callable `(token: str) -> dict | Awaitable[dict]`; an awaitable return is awaited before claims are read (issues #23/#24).
+```
+
 Pure-ASGI middleware (no Starlette coupling at the signature — `scope`/`receive`/`send`). **Fail-closed**: every rejection returns HTTP 401 with a JSON body `{"error":"Unauthorized","detail":...,"request_id":...}`. It never lets a request through without a tenant.
 
 ### Request flow
 
 1. Non-`http` scope (lifespan/websocket) → pass through unchanged.
-2. Path in `exempt_paths` (default: `/health`, `/health/deep`, `/api/health`, `/docs`, `/redoc`, `/openapi.json`) → pass through. Paths are `rstrip`-normalized (`/health/` == `/health`).
+2. Path in `exempt_paths` (default: `/health`, `/ready`, `/health/deep`, `/api/health`, `/docs`, `/redoc`, `/openapi.json`) → pass through. Paths are `rstrip`-normalized (`/health/` == `/health`).
 3. Read `X-Tenant-Id`, `X-User-Id`, `Authorization: Bearer <token>`.
 4. **Missing `X-Tenant-Id`** → 401 `missing X-Tenant-Id`.
 5. Token present:
-   - `verify_jwt` hook set → call it; exception → 401 `invalid token`. (Real signature verification happens here, in fusion-identity.)
+   - `verify_jwt` hook set → call it; if the return is awaitable, `await` it; exception → 401 `invalid token`. (Real signature verification happens here, in fusion-identity. Sync and async hooks both supported — issues #23/#24.)
    - no hook → `decode_jwt_claims(token)` (base64url + `exp` only); `TenantContextError` → 401 `invalid token`.
 6. **JWT `tid`/`tenant` ≠ `X-Tenant-Id`** → 401 `tenant mismatch`. Prevents a token from tenant A impersonating tenant B.
 7. No token and `require_jwt=True` → 401 `missing token`. Set `require_jwt=False` for header-only mode (internal mesh calls that carry `X-Tenant-Id` but no JWT).
@@ -92,10 +95,10 @@ Wraps `app.add_middleware(TenantMiddleware, ...)` + rebuilds the middleware stac
 ### verify_jwt hook
 
 ```python
-VerifyJwt = Callable[[str], dict[str, Any]]
+VerifyJwt = Callable[[str], dict[str, Any] | Awaitable[dict[str, Any]]]
 ```
 
-A `(token: str) -> claims: dict` callable. Inject the real verifier from **fusion-identity** (signature check, issuer/audience, key rotation). Core ships none — keeping signature verification out of core respects the "pure-tech, zero business" rule. Without a hook, `decode_jwt_claims` does **claims decode + `exp` check only, no signature verify** — suitable only for trusted upstreams that already verified the signature (e.g. behind a gateway that strips and re-signs).
+A `(token: str) -> claims: dict` callable — **sync or async**. If it returns an awaitable, the middleware awaits it before reading claims (issues #23/#24: a sync verifier that does blocking I/O inside the async middleware would block the event loop; an async verifier is awaited, so no thread-pool detour is needed downstream). Inject the real verifier from **fusion-identity** (signature check, issuer/audience, key rotation). Core ships none — keeping signature verification out of core respects the "pure-tech, zero business" rule. Without a hook, `decode_jwt_claims` does **claims decode + `exp` check only, no signature verify** — suitable only for trusted upstreams that already verified the signature (e.g. behind a gateway that strips and re-signs).
 
 ## JWT-less claims decode
 

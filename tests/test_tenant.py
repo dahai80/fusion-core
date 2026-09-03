@@ -12,6 +12,7 @@ from fusion_core.tenant import (
     TenantContext,
     TenantContextError,
     current,
+    decode_jwt_claims,
     from_mapping,
     reset,
     set_context,
@@ -113,6 +114,75 @@ class TestTenantMiddleware:
             assert captured["user_id"] == "u9"
             assert captured["role"] == "operator"
         assert current() is None, "contextvar must reset after request (no leak)"
+
+    def test_sync_verify_jwt_accepted(self):
+        from fusion_core.tenant import install_tenant_middleware
+
+        client = pytest.importorskip("starlette.testclient")
+        captured: dict = {}
+        token = _make_jwt({"tid": "tenant-sync", "sub": "u1", "role": "member"})
+
+        def verify_sync(tok):
+            # real consumer would hit fusion-identity; here just decode
+            return decode_jwt_claims(tok)
+
+        app = _make_app(captured)
+        install_tenant_middleware(app, require_jwt=True, verify_jwt=verify_sync)
+        with client.TestClient(app) as c:
+            r = c.get(
+                "/data",
+                headers={"X-Tenant-Id": "tenant-sync", "Authorization": f"Bearer {token}"},
+            )
+            assert r.status_code == 200
+            assert captured["tenant_id"] == "tenant-sync"
+            assert captured["role"] == "member"
+
+    def test_async_verify_jwt_does_not_block_event_loop(self):
+        # issue #23/#24: async verify_jwt must be awaited, not called sync.
+        # An async verify that yields must still resolve claims correctly.
+        import asyncio
+
+        from fusion_core.tenant import install_tenant_middleware
+
+        client = pytest.importorskip("starlette.testclient")
+        captured: dict = {}
+        token = _make_jwt({"tid": "tenant-async", "sub": "u2", "role": "admin"})
+
+        async def verify_async(tok):
+            await asyncio.sleep(0)  # yield to the loop — proves it's awaited
+            return decode_jwt_claims(tok)
+
+        app = _make_app(captured)
+        install_tenant_middleware(app, require_jwt=True, verify_jwt=verify_async)
+        with client.TestClient(app) as c:
+            r = c.get(
+                "/data",
+                headers={"X-Tenant-Id": "tenant-async", "Authorization": f"Bearer {token}"},
+            )
+            assert r.status_code == 200
+            assert captured["tenant_id"] == "tenant-async"
+            assert captured["role"] == "admin"
+
+    def test_async_verify_jwt_raise_rejects_401(self):
+        from fusion_core.tenant import install_tenant_middleware
+
+        client = pytest.importorskip("starlette.testclient")
+        captured: dict = {}
+        token = _make_jwt({"tid": "tenant-bad", "sub": "u3"})
+
+        async def verify_async_raises(tok):
+            raise RuntimeError("identity service down")
+
+        app = _make_app(captured)
+        install_tenant_middleware(app, require_jwt=True, verify_jwt=verify_async_raises)
+        with client.TestClient(app) as c:
+            r = c.get(
+                "/data",
+                headers={"X-Tenant-Id": "tenant-bad", "Authorization": f"Bearer {token}"},
+            )
+            assert r.status_code == 401
+            assert r.json()["detail"] == "invalid token"
+            assert captured == {}, "app must not run after verify raised (fail-closed)"
 
 
 class TestJwtUtils:

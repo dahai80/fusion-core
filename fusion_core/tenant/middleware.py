@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fusion_core.tenant.context import (
@@ -15,9 +16,9 @@ from fusion_core.tenant.jwt_utils import decode_jwt_claims
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_EXEMPT = frozenset({"/health", "/docs", "/openapi.json", "/redoc", "/health/deep", "/api/health"})
+_DEFAULT_EXEMPT = frozenset({"/health", "/ready", "/docs", "/openapi.json", "/redoc", "/health/deep", "/api/health"})
 
-VerifyJwt = Callable[[str], dict[str, Any]]
+VerifyJwt = Callable[[str], dict[str, Any] | Awaitable[dict[str, Any]]]
 
 
 def _hget(scope: dict[str, Any], name: str) -> str:
@@ -85,6 +86,8 @@ class TenantMiddleware:
             if self._verify_jwt is not None:
                 try:
                     claims = self._verify_jwt(token)
+                    if inspect.isawaitable(claims):
+                        claims = await claims
                 except Exception as exc:
                     logger.warning(
                         "tenant middleware reject: jwt verify failed rid=%s: %s",
