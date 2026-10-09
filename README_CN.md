@@ -12,13 +12,14 @@ fusion-core 是 Fusion 生态（"一核九端"）20+ Python 领域项目共享�
 
 ```bash
 pip install -e fusion-core            # 基础（仅 httpx，核心依赖零业务、零 pydantic）
-pip install -e "fusion-core[test]"    # 加测试栈（pytest、ruff、fastapi）
+pip install -e "fusion-core[test]"    # 加测试栈（pytest、ruff、fastapi、jsonschema）
 pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
+pip install -e "fusion-core[schema]"  # 加 jsonschema（用于 dsl_schema 校验）
 ```
 
 要求：Python >=3.12。
 
-## 9 模块速查
+## 10 模块速查
 
 | 模块 | 关键符号 | 用途 |
 |------|----------|------|
@@ -31,6 +32,7 @@ pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 | `prompt` | `PromptManager` | prompt 模板管理（只管引擎不含领域内容，缺失目录直接抛 `FileNotFoundError`；**mtime 闸门缓存**——运行期改盘即生效（mtime 变即失效重读），`clear_cache()` 强制全刷新，E3） |
 | `guard_client` | `FusionGuardClient`、`GuardVerdict`、`GuardRule`、`RedactResult`、`ChainVerification`、`AllChainsVerification`、`GuardError` + 8 个类型化子类 | **fusion-guard**（零信任动作授权守护进程）的纯 Python UDS JSON-RPC 2.0 客户端。换行帧分（`0x0A`，1 MiB 上限），默认 2 s 超时，逐调用断线重连单次重试。方法与 `guard.ping` / `guard.evaluate` / `guard.rule.list` / `guard.redact` / `guard.reveal` / `guard.confirm` / `guard.tcc.status` / `guard.tcc.events` / `guard.audit.verify` 一一对应。**拦截判定是结果而非错误**（E5）——`evaluate()` 返回 `GuardVerdict(action="block")`；RPC 错误码映射为类型化异常（`GuardUnauthorizedError` -32001、`GuardRateLimitError` -32002、`StaleEpochError` -32003 带 `caller_epoch`/`guard_epoch`、`GuardEngineError` -32010）。默认 socket `/tmp/fusion-guard.sock` 在调用时惰性从 `FUSION_GUARD_SOCK` 解析（导入即零 I/O）。上下文管理器生命周期；原生 `fg-pyo3` 仍为可选快速通道 |
 | `tenant` | `TenantContext`、`current`、`set_context`、`reset`、`has_scope`、`from_mapping`、`decode_jwt_claims`、`tenant_context_from_token`、`TenantMiddleware`、`install_tenant_middleware`、`get_tenant_dep` | L1 多租户织物。`TenantContext`（frozen-slots dataclass，基于 `contextvars`）按请求作用域携带 `tenant_id`/`user_id`/`role`/`jti`/`scopes`；`TenantMiddleware` 是**失败即关闭**的 ASGI 中间件——豁免路径跳过、缺 `X-Tenant-Id` → 401、JWT `tid ≠ X-Tenant-Id` → 401、`require_jwt=True` 时缺 bearer → 401，请求期间绑定上下文，`finally` 中 `reset()`（无跨请求泄漏）。`jwt_utils` 做 base64url 解码 + `exp` 校验，**不依赖 PyJWT、不做签名校验**——真实签名校验通过 `verify_jwt` 注入钩子完成（同步或异步均可；返回 awaitable 时会被 await，阻塞型校验器不会卡住事件循环——issues #23/#24；落在 fusion-identity）。`_JsonFormatter` 从 `current()` 自动注入 `tenant_id`/`user_id` 到日志记录。三语镜像锚点（Python 变体；Rust/Swift 变体落各自仓） |
+| `dsl_schema` | `SOCRATIC_DSL_V3_SCHEMA`、`validate_dsl`、`validate_dsl_str` | **Socratic DSL v3.0** 标准 JSON Schema（Draft 2020-12）——fusion-k12-teacher（生成）、fusion-bench（评估）、fusion-artifacts-engine（解析）、fusion-trainer（样本校验）的共享契约。强制 `meta`（id/grade/topic/visual_type/fallback_type）、`parameters`、`entities`、`pipeline` 及步骤必填字段（`step/title/formula/eval/result_unit/visual_state`）；`visual_type` 枚举 8 值（array_grid/tape_diagram/geometry_2d/isometric_3d/track_timeline/bucket_divider/data_chart/flow_card），`fallback_type` 枚举 2 值（tape_diagram/flow_card）。`validate_dsl(dict) -> bool` 与 `validate_dsl_str(str) -> tuple[bool, str]`（解析+校验，返回错误路径）。jsonschema 在校验函数内惰性导入——`import fusion_core` 保持零 I/O；装 `[schema]` extra 启用校验 |
 
 ## 用法
 

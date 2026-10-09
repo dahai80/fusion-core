@@ -24,6 +24,11 @@ from fusion_core.config import (  # noqa: E402
     load_settings,
     resolve_api_key,
 )
+from fusion_core.dsl_schema import (  # noqa: E402
+    SOCRATIC_DSL_V3_SCHEMA,
+    validate_dsl,
+    validate_dsl_str,
+)
 from fusion_core.guard_client import (  # noqa: E402
     AllChainsVerification,
     ChainVerification,
@@ -115,6 +120,9 @@ __all__ = [
     "get_metrics_snapshot",
     "reset_metrics",
     "PromptManager",
+    "SOCRATIC_DSL_V3_SCHEMA",
+    "validate_dsl",
+    "validate_dsl_str",
     "FusionGuardClient",
     "GuardVerdict",
     "GuardRule",

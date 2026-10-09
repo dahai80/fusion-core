@@ -12,13 +12,14 @@ It depends on nothing Fusion-specific. `import fusion_core` triggers no I/O (no 
 
 ```bash
 pip install -e fusion-core            # core (httpx only; zero business deps, no pydantic)
-pip install -e "fusion-core[test]"    # + test stack (pytest, ruff, fastapi)
+pip install -e "fusion-core[test]"    # + test stack (pytest, ruff, fastapi, jsonschema)
 pip install -e "fusion-core[fastapi]" # + fastapi, uvicorn, pydantic
+pip install -e "fusion-core[schema]"  # + jsonschema (for dsl_schema validation)
 ```
 
 Requirements: Python >=3.12.
 
-## 9 modules at a glance
+## 10 modules at a glance
 
 | Module | Key symbols | Purpose |
 |--------|-------------|---------|
@@ -31,6 +32,7 @@ Requirements: Python >=3.12.
 | `prompt` | `PromptManager` | Prompt-template management (engine only, no domain content; missing dir raises `FileNotFoundError`; **mtime-gated cache** — on-disk edits are picked up at runtime (mtime change invalidates the entry), `clear_cache()` forces a full refresh (E3)) |
 | `guard_client` | `FusionGuardClient`, `GuardVerdict`, `GuardRule`, `RedactResult`, `ChainVerification`, `AllChainsVerification`, `GuardError` + 8 typed subclasses | Pure-Python UDS JSON-RPC 2.0 client for **fusion-guard** (the zero-trust action-authorization daemon). Newline-framed (`0x0A`, 1 MiB cap), 2 s default timeout, per-call reconnect-on-drop with one retry. Methods map 1:1 to `guard.ping` / `guard.evaluate` / `guard.rule.list` / `guard.redact` / `guard.reveal` / `guard.confirm` / `guard.tcc.status` / `guard.tcc.events` / `guard.audit.verify`. **Block verdicts are results, not errors** (E5) — `evaluate()` returns `GuardVerdict(action="block")`; RPC error codes map to typed exceptions (`GuardUnauthorizedError` -32001, `GuardRateLimitError` -32002, `StaleEpochError` -32003 carrying `caller_epoch`/`guard_epoch`, `GuardEngineError` -32010). Default socket `/tmp/fusion-guard.sock` resolved lazily at call time from `FUSION_GUARD_SOCK` (import = no I/O). Context-manager lifecycle; native `fg-pyo3` stays an optional fast path |
 | `tenant` | `TenantContext`, `current`, `set_context`, `reset`, `has_scope`, `from_mapping`, `decode_jwt_claims`, `tenant_context_from_token`, `TenantMiddleware`, `install_tenant_middleware`, `get_tenant_dep` | L1 multi-tenant fabric. `TenantContext` (frozen-slots dataclass over `contextvars`) carries `tenant_id`/`user_id`/`role`/`jti`/`scopes` request-scoped; `TenantMiddleware` is a **fail-closed** ASGI middleware — exempt paths skip, missing `X-Tenant-Id` → 401, JWT `tid ≠ X-Tenant-Id` → 401, missing bearer when `require_jwt=True` → 401, binds context for the request then `reset()` in `finally` (no cross-request leak). `jwt_utils` does base64url decode + `exp` check with **no PyJWT dependency, no signature verify** — real signature verification is injected via the `verify_jwt` hook (sync or async; an awaitable return is awaited so a blocking verifier does not stall the event loop — issues #23/#24; lives in fusion-identity). `_JsonFormatter` auto-injects `tenant_id`/`user_id` from `current()` into log records. Trilingual mirror anchor (Python variant; Rust/Swift variants land in their own repos) |
+| `dsl_schema` | `SOCRATIC_DSL_V3_SCHEMA`, `validate_dsl`, `validate_dsl_str` | Canonical JSON Schema (Draft 2020-12) for the **Socratic DSL v3.0** — the shared contract across fusion-k12-teacher (generate), fusion-bench (evaluate), fusion-artifacts-engine (parse), fusion-trainer (sample validation). Enforces `meta` (id/grade/topic/visual_type/fallback_type), `parameters`, `entities`, `pipeline` with step required fields (`step/title/formula/eval/result_unit/visual_state`); `visual_type` enum (8 values: array_grid/tape_diagram/geometry_2d/isometric_3d/track_timeline/bucket_divider/data_chart/flow_card), `fallback_type` enum (2 values: tape_diagram/flow_card). `validate_dsl(dict) -> bool` and `validate_dsl_str(str) -> tuple[bool, str]` (parse + validate, returns error path). jsonschema is a lazy import inside validators — `import fusion_core` stays I/O-free; install `[schema]` extra to enable validation |
 
 ## Usage
 
