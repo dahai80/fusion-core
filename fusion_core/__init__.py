@@ -70,6 +70,15 @@ from fusion_core.parse import (  # noqa: E402
     strip_code_fence,
 )
 from fusion_core.prompt import PromptManager  # noqa: E402
+from fusion_core.prompt_registry import (  # noqa: E402
+    PromptVersionError,
+    PromptVersionRecord,
+    PromptVersionRegistry,
+    SnapshotIntegrityError,
+    UnknownPromptVersionError,
+    compute_version_id,
+    is_valid_version_id,
+)
 
 try:
     from fusion_core.tenant import (  # noqa: F401
@@ -120,6 +129,13 @@ __all__ = [
     "get_metrics_snapshot",
     "reset_metrics",
     "PromptManager",
+    "PromptVersionRegistry",
+    "PromptVersionRecord",
+    "PromptVersionError",
+    "UnknownPromptVersionError",
+    "SnapshotIntegrityError",
+    "compute_version_id",
+    "is_valid_version_id",
     "SOCRATIC_DSL_V3_SCHEMA",
     "validate_dsl",
     "validate_dsl_str",

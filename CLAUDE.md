@@ -33,7 +33,7 @@ ruff format --check .                              # verify formatting without w
 
 Tags matching `v*` trigger `.github/workflows/release.yml`, which builds wheel + sdist and attaches them to a GitHub Release. Before tagging, keep **4-way version consistency**: `pyproject.toml` `[project].version`, `fusion_core/__init__.py` `__version__` (resolved via `importlib.metadata`), the git tag, and the published GitHub Release must all agree. Conventional-commit scopes used historically: `feat(tenant)`, `fix(http)`, `release(vX.Y.Z)`, `style(docs)`.
 
-## Architecture — the 10 modules
+## Architecture — the 11 modules
 
 All public symbols are re-exported from `fusion_core/__init__.py`. Importing `fusion_core` performs **no I/O** — no env read, no file read, no network connection. Every default (`FUSION_MLX_URL`, `FUSION_GUARD_SOCK`, settings path) is resolved lazily at call time. This is a hard design rule: the library must be safe to import anywhere.
 
@@ -57,6 +57,9 @@ All public symbols are re-exported from `fusion_core/__init__.py`. Importing `fu
 
 ### `prompt` — prompt-template manager
 `PromptManager`. Engine only, no domain content. Missing dir raises `FileNotFoundError`. **mtime-gated cache** — on-disk edits picked up at runtime (mtime change invalidates the entry); `clear_cache()` forces full refresh.
+
+### `prompt_registry` — immutable prompt versioning + replay
+`PromptVersionRegistry` + `PromptVersionRecord` + `compute_version_id` / `is_valid_version_id` + `PromptVersionError` / `UnknownPromptVersionError` (also KeyError) / `SnapshotIntegrityError`. Content-addressed versioning: `version_id` = 16-hex sha256 of `name + "\x00" + template_text` — dedupe for free, edits create new versions, snapshots (`versions/<id>.txt`) are write-once, every read re-verifies sha256 (tamper/missing = `SnapshotIntegrityError`, never silent). `render(prompt_version, **vars)` re-materializes byte-identical prompts (shares `_render_template` with `PromptManager`); `replay(prompt_version, client)` re-runs through an injected `FusionMLXClient` (caller points base_url at gateway for cluster). Storage = plain files (`index.json` lineage + snapshot dir), atomic writes, `reload()` picks up external writes. Closes issue #28 (ai-speech-exam reproducibility gap G3); no new deps, import stays I/O-free.
 
 ### `guard_client` — fusion-guard UDS JSON-RPC client
 `FusionGuardClient` + `GuardVerdict` / `GuardRule` / `RedactResult` / `ChainVerification` / `GuardError` + 8 typed subclasses. Pure-Python client over Unix Domain Socket for **fusion-guard** (the zero-trust action-authorization daemon). Newline-framed (`0x0A`, 1 MiB cap), 2s default timeout, per-call reconnect-on-drop with one retry. Methods map 1:1 to `guard.ping` / `guard.evaluate` / `guard.rule.list` / `guard.redact` / `guard.reveal` / `guard.confirm` / `guard.tcc.status` / `guard.tcc.events` / `guard.audit.verify`. **Block verdicts are results, not errors** (E5) — `evaluate()` returns `GuardVerdict(action="block")`. RPC error codes map to typed exceptions (`GuardUnauthorizedError` -32001, `GuardRateLimitError` -32002, `StaleEpochError` -32003, `GuardEngineError` -32010). Default socket `/tmp/fusion-guard.sock` resolved lazily from `FUSION_GUARD_SOCK`. Native `fg-pyo3` stays an optional fast path.
