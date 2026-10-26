@@ -11,6 +11,21 @@ _VAR_RE = re.compile(r"\{\{|\}\}|\{(\w+)\}")
 _SUFFIXES = (".txt", ".md")
 
 
+def _render_template(template: str, variables: dict[str, Any], *, template_name: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        whole = match.group(0)
+        if whole == "{{":
+            return "{"
+        if whole == "}}":
+            return "}"
+        key = match.group(1)
+        if key not in variables:
+            raise KeyError(f"missing prompt variable {key!r} for template {template_name!r}")
+        return str(variables[key])
+
+    return _VAR_RE.sub(repl, template)
+
+
 class PromptManager:
     def __init__(self, prompts_dir: str | Path):
         self.prompts_dir = Path(prompts_dir)
@@ -47,19 +62,7 @@ class PromptManager:
 
     def render(self, template_name: str, **variables: Any) -> str:
         template = self.get(template_name)
-
-        def repl(match: re.Match[str]) -> str:
-            whole = match.group(0)
-            if whole == "{{":
-                return "{"
-            if whole == "}}":
-                return "}"
-            key = match.group(1)
-            if key not in variables:
-                raise KeyError(f"missing prompt variable {key!r} for template {template_name!r}")
-            return str(variables[key])
-
-        return _VAR_RE.sub(repl, template)
+        return _render_template(template, variables, template_name=template_name)
 
     def list_names(self) -> list[str]:
         names: list[str] = []
