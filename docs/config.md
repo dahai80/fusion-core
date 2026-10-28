@@ -1,6 +1,6 @@
 # config
 
-Lazy settings load, api_key resolution, mtime-invalidated cache. No I/O at import.
+Lazy settings load, api_key resolution, mtime-invalidated cache. No I/O at import. Since v0.7.0 also the single-point resolution layer for `architecture/config-conventions.md` (issues #31/#32): global secrets, profile, gateway URL, per-service port/data-dir.
 
 ## Symbols
 
@@ -11,6 +11,12 @@ Lazy settings load, api_key resolution, mtime-invalidated cache. No I/O at impor
 - [`resolve_api_key(explicit, *, env_var, settings_path)`](#resolve_api_key)
 - [`load_api_key(name)`](#load_api_key)
 - [`clear_cache()`](#clear_cache)
+- [`profile()`](#profile)
+- [`client_key()`](#client_key)
+- [`admin_key()`](#admin_key)
+- [`gateway_base_url()`](#gateway_base_url)
+- [`service_port(app, default)`](#service_port)
+- [`service_data_dir(app, default)`](#service_data_dir)
 
 ## Constants
 
@@ -98,3 +104,69 @@ Clears `_SETTINGS_CACHE`. Use in tests to avoid cross-test pollution.
 - Cache invalidation by mtime (R1): config rotation effective without process restart.
 - Import-time I/O isolation: `default_mlx_base_url()` reads env at call, guarded by `tests/test_config.py::TestImportTimeIsolation` env-get spy.
 - `_BOOL_FALSE` dead branch `""` removed (I7): empty string returns `default` at entry, never reaches bool cast.
+
+# config-conventions layer (v0.7.0, issues #31/#32)
+
+Single-point resolution for `architecture/config-conventions.md`. Domain apps call these instead of hand-rolling `os.environ` lookups — CI (`scripts/check-env.py`) flags bespoke `_resolve_*key` helpers.
+
+## profile
+
+```python
+def profile() -> str
+```
+
+Returns `FUSION_PROFILE` env value, default `"dev"`. `dev` = lenient (missing secrets warn, return `""`); `prod` = fail-fast (`RuntimeError`). No import-time read.
+
+## client_key
+
+```python
+def client_key() -> str
+```
+
+Client secret for gateway auth. Resolution order (alias chain, config-conventions §2): `FUSION_CLIENT_KEY` → `FUSION_MLX_API_KEY` → `MLX_API_KEY`. Legacy names log a deprecation warning pointing at config-conventions §6.
+
+- dev + none set: warn-once ("anonymous dev mode", module-level `_ANON_WARNED` set) and return `""`
+- prod + none set: `RuntimeError` with 3 parts — var name, "obtain from gateway admin API", doc path
+
+## admin_key
+
+```python
+def admin_key() -> str
+```
+
+Admin secret via `FUSION_ADMIN_KEY`. No alias chain (admin key has no legacy names). Same prod fail-fast / dev warn-once semantics as `client_key`.
+
+## gateway_base_url
+
+```python
+def gateway_base_url() -> str
+```
+
+`FUSION_GATEWAY_BASE_URL` → legacy `FUSION_GATEWAY_URL` (deprecation warning) → default `http://127.0.0.1:11432` (dev default per config-conventions §1).
+
+## service_port
+
+```python
+def service_port(app: str, default: int | None = None) -> int
+```
+
+Reads `FUSION_<APP>_PORT` (app name upper-cased, dashes to underscores). Env wins over `default`. Non-integer env → `ValueError`. Unset + no default → `ValueError` hinting to register the port in `architecture/port-registry.yaml`.
+
+```python
+port = service_port("fusion-rag", default=11501)  # FUSION_FUSION_RAG_PORT or 11501
+```
+
+## service_data_dir
+
+```python
+def service_data_dir(app: str, default: str | Path | None = None) -> Path
+```
+
+Reads `FUSION_<APP>_DATA_DIR` → explicit `default` → `~/.<short>` where `<short>` strips the `fusion-` prefix (`fusion-rag` → `~/.rag`). Returns a `Path`.
+
+## Conventions-layer design notes
+
+- Zero-downtime migration: legacy alias chains keep existing deployments working while warning (Phase 2 of config-conventions §6); aliases are deleted in Phase 3.
+- Warn-once: repeated anonymous dev-mode calls log one warning per env var per process.
+- Prod fail-fast message is 3-part by design (var name + where to obtain + doc path) — enforced by `tests/test_config_conventions.py`.
+- All functions read env at call time; `import fusion_core` remains I/O-free.

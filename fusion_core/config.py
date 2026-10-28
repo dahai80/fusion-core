@@ -119,3 +119,85 @@ def load_api_key(name: str = "fusion-mlx") -> str:
 def clear_cache() -> None:
     _SETTINGS_CACHE.clear()
     logger.debug("config cache cleared")
+
+
+# --- config-conventions single-point resolution (config-conventions.md §1/§3) ---
+
+_DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:11432"
+_ANON_WARNED: set[str] = set()
+
+
+def profile() -> str:
+    return os.environ.get("FUSION_PROFILE", "dev")
+
+
+def _resolve_secret(env: str, *, hint: str) -> str:
+    key = os.environ.get(env, "")
+    if key:
+        return key
+    if profile() == "prod":
+        raise RuntimeError(f"{env} not set — {hint}, see architecture/config-conventions.md")
+    if env not in _ANON_WARNED:
+        _ANON_WARNED.add(env)
+        logger.warning("anonymous dev mode: %s not set (%s)", env, hint)
+    return ""
+
+
+def client_key() -> str:
+    for env in ("FUSION_CLIENT_KEY", "FUSION_MLX_API_KEY", "MLX_API_KEY"):
+        key = os.environ.get(env, "")
+        if key:
+            if env != "FUSION_CLIENT_KEY":
+                logger.warning("%s is deprecated, set FUSION_CLIENT_KEY instead (config-conventions §6)", env)
+            return key
+    if profile() == "prod":
+        raise RuntimeError(
+            "FUSION_CLIENT_KEY not set — obtain from gateway admin API, see architecture/config-conventions.md"
+        )
+    if "FUSION_CLIENT_KEY" not in _ANON_WARNED:
+        _ANON_WARNED.add("FUSION_CLIENT_KEY")
+        logger.warning("anonymous dev mode: FUSION_CLIENT_KEY not set (obtain from gateway admin API)")
+    return ""
+
+
+def admin_key() -> str:
+    return _resolve_secret("FUSION_ADMIN_KEY", hint="obtain from gateway admin API")
+
+
+def gateway_base_url() -> str:
+    url = os.environ.get("FUSION_GATEWAY_BASE_URL", "")
+    if url:
+        return url
+    legacy = os.environ.get("FUSION_GATEWAY_URL", "")
+    if legacy:
+        logger.warning("FUSION_GATEWAY_URL is deprecated, set FUSION_GATEWAY_BASE_URL instead (config-conventions §6)")
+        return legacy
+    return _DEFAULT_GATEWAY_BASE_URL
+
+
+def service_port(app: str, default: int | None = None) -> int:
+    if not app:
+        raise ValueError("service_port: app name required")
+    raw = os.environ.get(f"FUSION_{app.upper().replace('-', '_')}_PORT", "")
+    if raw:
+        try:
+            return int(raw)
+        except ValueError as exc:
+            raise ValueError(f"FUSION_{app.upper().replace('-', '_')}_PORT is not an integer: {raw!r}") from exc
+    if default is not None:
+        return default
+    raise ValueError(
+        f"FUSION_{app.upper().replace('-', '_')}_PORT not set and no default given — "
+        "register the port in architecture/port-registry.yaml and set the env or pass default="
+    )
+
+
+def service_data_dir(app: str, default: str | Path | None = None) -> Path:
+    if not app:
+        raise ValueError("service_data_dir: app name required")
+    raw = os.environ.get(f"FUSION_{app.upper().replace('-', '_')}_DATA_DIR", "")
+    if raw:
+        return Path(raw)
+    if default is not None:
+        return Path(default)
+    return Path.home() / f".{app.removeprefix('fusion-')}"
