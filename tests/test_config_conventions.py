@@ -8,13 +8,21 @@ import fusion_core.config as config
 from fusion_core.config import (
     admin_key,
     client_key,
+    gateway_admin_key,
     gateway_base_url,
     profile,
     service_data_dir,
     service_port,
 )
 
-_KEY_ENVS = ("FUSION_CLIENT_KEY", "FUSION_MLX_API_KEY", "MLX_API_KEY", "FUSION_ADMIN_KEY", "FUSION_PROFILE")
+_KEY_ENVS = (
+    "FUSION_CLIENT_KEY",
+    "FUSION_MLX_API_KEY",
+    "MLX_API_KEY",
+    "FUSION_ADMIN_KEY",
+    "FUSION_GATEWAY_API_KEY",
+    "FUSION_PROFILE",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -148,6 +156,14 @@ class TestServicePort:
         monkeypatch.setenv("FUSION_RAG_PORT", "11501")
         assert service_port("rag") == 11501
 
+    def test_fusion_prefix_stripped(self, monkeypatch):
+        monkeypatch.setenv("FUSION_RAG_PORT", "11501")
+        assert service_port("fusion-rag") == 11501
+
+    def test_both_forms_identical(self, monkeypatch):
+        monkeypatch.setenv("FUSION_MLX_PORT", "11434")
+        assert service_port("mlx") == service_port("fusion-mlx") == 11434
+
     def test_dashes_normalized(self, monkeypatch):
         monkeypatch.setenv("FUSION_MODEL_HUB_PORT", "11510")
         assert service_port("model-hub") == 11510
@@ -162,6 +178,10 @@ class TestServicePort:
     def test_missing_no_default_raises(self):
         with pytest.raises(ValueError, match="FUSION_RAG_PORT not set"):
             service_port("rag")
+
+    def test_missing_no_default_raises_full_name(self):
+        with pytest.raises(ValueError, match="FUSION_RAG_PORT not set"):
+            service_port("fusion-rag")
 
     def test_non_integer_raises(self, monkeypatch):
         monkeypatch.setenv("FUSION_RAG_PORT", "http")
@@ -178,6 +198,10 @@ class TestServiceDataDir:
         monkeypatch.setenv("FUSION_RAG_DATA_DIR", str(tmp_path))
         assert service_data_dir("rag") == tmp_path
 
+    def test_fusion_prefix_stripped(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("FUSION_RAG_DATA_DIR", str(tmp_path))
+        assert service_data_dir("fusion-rag") == tmp_path
+
     def test_explicit_default(self, tmp_path):
         assert service_data_dir("rag", default=tmp_path / "d") == tmp_path / "d"
 
@@ -190,3 +214,69 @@ class TestServiceDataDir:
     def test_empty_app_raises(self):
         with pytest.raises(ValueError):
             service_data_dir("")
+
+
+class TestGatewayAdminKey:
+    def test_env(self, monkeypatch):
+        monkeypatch.setenv("FUSION_GATEWAY_API_KEY", "gk-env")
+        assert gateway_admin_key() == "gk-env"
+
+    def test_settings_fallback(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text('{"shell": {"gateway_admin_key": "gk-file"}}', encoding="utf-8")
+        assert gateway_admin_key(settings_path=settings) == "gk-file"
+
+    def test_env_wins_over_settings(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("FUSION_GATEWAY_API_KEY", "gk-env")
+        settings = tmp_path / "settings.json"
+        settings.write_text('{"shell": {"gateway_admin_key": "gk-file"}}', encoding="utf-8")
+        assert gateway_admin_key(settings_path=settings) == "gk-env"
+
+    def test_missing_settings_dev_empty(self, tmp_path):
+        assert gateway_admin_key(settings_path=tmp_path / "absent.json") == ""
+
+    def test_missing_settings_prod_raises(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("FUSION_PROFILE", "prod")
+        with pytest.raises(RuntimeError, match="FUSION_GATEWAY_API_KEY not set"):
+            gateway_admin_key(settings_path=tmp_path / "absent.json")
+
+    def test_prod_message_has_three_parts(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("FUSION_PROFILE", "prod")
+        with pytest.raises(RuntimeError) as exc_info:
+            gateway_admin_key(settings_path=tmp_path / "absent.json")
+        msg = str(exc_info.value)
+        assert "FUSION_GATEWAY_API_KEY" in msg
+        assert "gateway admin API" in msg
+        assert "config-conventions.md" in msg
+
+    def test_dev_warns_once(self, tmp_path, caplog):
+        caplog.set_level(logging.WARNING, logger="fusion_core.config")
+        assert gateway_admin_key(settings_path=tmp_path / "absent.json") == ""
+        assert gateway_admin_key(settings_path=tmp_path / "absent.json") == ""
+        warns = [r for r in caplog.records if "anonymous dev mode" in r.message]
+        assert len(warns) == 1
+
+    def test_shell_not_dict_ignored(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text('{"shell": "bogus"}', encoding="utf-8")
+        assert gateway_admin_key(settings_path=settings) == ""
+
+    def test_shell_key_null_ignored(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text('{"shell": {"gateway_admin_key": null}}', encoding="utf-8")
+        assert gateway_admin_key(settings_path=settings) == ""
+
+    def test_shell_key_non_string_ignored(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text('{"shell": {"gateway_admin_key": 123}}', encoding="utf-8")
+        assert gateway_admin_key(settings_path=settings) == ""
+
+    def test_prod_with_env_ok(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("FUSION_PROFILE", "prod")
+        monkeypatch.setenv("FUSION_GATEWAY_API_KEY", "gk-live")
+        assert gateway_admin_key(settings_path=tmp_path / "absent.json") == "gk-live"
+
+    def test_malformed_settings_dev_empty(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text("{not json", encoding="utf-8")
+        assert gateway_admin_key(settings_path=settings) == ""

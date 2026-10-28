@@ -14,6 +14,7 @@ class TenantContext:
     role: str | None = None
     jti: str | None = None
     scopes: tuple[str, ...] = ()
+    authenticated: bool = False
 
 
 class TenantContextError(Exception):

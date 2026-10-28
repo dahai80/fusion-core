@@ -23,6 +23,7 @@ class TenantContext:
     role: str | None = None
     jti: str | None = None
     scopes: tuple[str, ...] = ()
+    authenticated: bool = False
 ```
 
 Frozen-slots dataclass: immutable, memory-tight. One instance per request, bound to a `contextvars.ContextVar` (not thread-local) so it propagates correctly across `asyncio` tasks and survives structured-concurrency fan-out without leaking across requests.
@@ -34,8 +35,11 @@ Frozen-slots dataclass: immutable, memory-tight. One instance per request, bound
 | `role` | `str \| None` | JWT `role` claim |
 | `jti` | `str \| None` | JWT `jti` (token id, for revocation lookup) |
 | `scopes` | `tuple[str, ...]` | JWT `scope` (space-str) or `scopes` (array) |
+| `authenticated` | `bool` | `True` only when a verified JWT produced claims (middleware); `False` for anonymous contexts (issue #37) |
 
 `tenant_id` is mandatory — a context without a tenant is not a context (middleware rejects it 401 before binding).
+
+**`authenticated` (issue #37)**: with `require_jwt=False` the middleware binds a context even for token-less requests; before v0.8.0 anonymous and verified-JWT contexts differed only in empty `role`/`jti`/`scopes` — consumers checking only `ctx.tenant_id` granted anonymous access (the fusion-security fail-open hole). Consumers should now write `if ctx and ctx.authenticated:` instead of reconstructing evidence from optional fields. `from_mapping` defaults it to `False`; trusted internal callers construct `TenantContext(..., authenticated=True)` explicitly.
 
 ## Context helpers
 

@@ -15,6 +15,7 @@ Lazy settings load, api_key resolution, mtime-invalidated cache. No I/O at impor
 - [`client_key()`](#client_key)
 - [`admin_key()`](#admin_key)
 - [`gateway_base_url()`](#gateway_base_url)
+- [`gateway_admin_key()`](#gateway_admin_key)
 - [`service_port(app, default)`](#service_port)
 - [`service_data_dir(app, default)`](#service_data_dir)
 
@@ -144,16 +145,31 @@ def gateway_base_url() -> str
 
 `FUSION_GATEWAY_BASE_URL` → legacy `FUSION_GATEWAY_URL` (deprecation warning) → default `http://127.0.0.1:11432` (dev default per config-conventions §1).
 
+## gateway_admin_key
+
+```python
+def gateway_admin_key(settings_path: str | Path | None = None) -> str
+```
+
+Gateway admin secret (issue #35 — the key fusion-gateway `:11432` actually accepts on admin-authenticated deployments). Resolution order: `FUSION_GATEWAY_API_KEY` env → `shell.gateway_admin_key` in settings.json (default `~/.fusion-mlx/settings.json`). Malformed/missing settings, non-dict `shell`, null/non-string key → graceful skip with debug/warning logs.
+
+- dev + nothing found: warn-once ("anonymous dev mode") and return `""`
+- prod + nothing found: `RuntimeError` with 3 parts — var name, "obtain from gateway admin API", doc path
+
+```python
+key = gateway_admin_key()  # FUSION_GATEWAY_API_KEY or shell.gateway_admin_key
+```
+
 ## service_port
 
 ```python
 def service_port(app: str, default: int | None = None) -> int
 ```
 
-Reads `FUSION_<APP>_PORT` (app name upper-cased, dashes to underscores). Env wins over `default`. Non-integer env → `ValueError`. Unset + no default → `ValueError` hinting to register the port in `architecture/port-registry.yaml`.
+Reads `FUSION_<APP>_PORT` — the `fusion-` prefix is **stripped first** (issues #34/#36), so `"rag"` and `"fusion-rag"` resolve the same env var `FUSION_RAG_PORT` (never the doubled `FUSION_FUSION_RAG_PORT`). App name upper-cased, dashes to underscores. Env wins over `default`. Non-integer env → `ValueError`. Unset + no default → `ValueError` hinting to register the port in `architecture/port-registry.yaml`.
 
 ```python
-port = service_port("fusion-rag", default=11501)  # FUSION_FUSION_RAG_PORT or 11501
+port = service_port("fusion-rag", default=11501)  # FUSION_RAG_PORT or 11501
 ```
 
 ## service_data_dir
@@ -162,11 +178,12 @@ port = service_port("fusion-rag", default=11501)  # FUSION_FUSION_RAG_PORT or 11
 def service_data_dir(app: str, default: str | Path | None = None) -> Path
 ```
 
-Reads `FUSION_<APP>_DATA_DIR` → explicit `default` → `~/.<short>` where `<short>` strips the `fusion-` prefix (`fusion-rag` → `~/.rag`). Returns a `Path`.
+Reads `FUSION_<APP>_DATA_DIR` (prefix stripped, same as `service_port`) → explicit `default` → `~/.<short>` where `<short>` strips the `fusion-` prefix (`fusion-rag` → `~/.rag`). Returns a `Path`. Services whose established runtime dir differs (e.g. fusion-mlx uses `~/.fusion-mlx`) pass an explicit `default`.
 
 ## Conventions-layer design notes
 
 - Zero-downtime migration: legacy alias chains keep existing deployments working while warning (Phase 2 of config-conventions §6); aliases are deleted in Phase 3.
+- Prefix normalization (issues #34/#36): `service_port`/`service_data_dir` strip a leading `fusion-` before building the env name, so the canonical full repo name and the bare short name resolve identically.
 - Warn-once: repeated anonymous dev-mode calls log one warning per env var per process.
 - Prod fail-fast message is 3-part by design (var name + where to obtain + doc path) — enforced by `tests/test_config_conventions.py`.
 - All functions read env at call time; `import fusion_core` remains I/O-free.

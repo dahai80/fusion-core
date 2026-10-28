@@ -178,16 +178,18 @@ def gateway_base_url() -> str:
 def service_port(app: str, default: int | None = None) -> int:
     if not app:
         raise ValueError("service_port: app name required")
-    raw = os.environ.get(f"FUSION_{app.upper().replace('-', '_')}_PORT", "")
+    short = app.removeprefix("fusion-")
+    env = f"FUSION_{short.upper().replace('-', '_')}_PORT"
+    raw = os.environ.get(env, "")
     if raw:
         try:
             return int(raw)
         except ValueError as exc:
-            raise ValueError(f"FUSION_{app.upper().replace('-', '_')}_PORT is not an integer: {raw!r}") from exc
+            raise ValueError(f"{env} is not an integer: {raw!r}") from exc
     if default is not None:
         return default
     raise ValueError(
-        f"FUSION_{app.upper().replace('-', '_')}_PORT not set and no default given — "
+        f"{env} not set and no default given — "
         "register the port in architecture/port-registry.yaml and set the env or pass default="
     )
 
@@ -195,9 +197,39 @@ def service_port(app: str, default: int | None = None) -> int:
 def service_data_dir(app: str, default: str | Path | None = None) -> Path:
     if not app:
         raise ValueError("service_data_dir: app name required")
-    raw = os.environ.get(f"FUSION_{app.upper().replace('-', '_')}_DATA_DIR", "")
+    short = app.removeprefix("fusion-")
+    raw = os.environ.get(f"FUSION_{short.upper().replace('-', '_')}_DATA_DIR", "")
     if raw:
         return Path(raw)
     if default is not None:
         return Path(default)
-    return Path.home() / f".{app.removeprefix('fusion-')}"
+    return Path.home() / f".{short}"
+
+
+def gateway_admin_key(settings_path: str | Path | None = None) -> str:
+    key = os.environ.get("FUSION_GATEWAY_API_KEY", "")
+    if key:
+        return key
+    cfg: dict = {}
+    try:
+        cfg = load_settings(settings_path)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        logger.debug("gateway_admin_key: settings unavailable: %s", exc)
+    shell = cfg.get("shell", {})
+    if isinstance(shell, dict):
+        raw = shell.get("gateway_admin_key", "")
+        if raw is None:
+            logger.warning("gateway_admin_key: shell.gateway_admin_key is null in settings.json")
+        elif not isinstance(raw, str):
+            logger.warning("gateway_admin_key: shell.gateway_admin_key not a string, got %s", type(raw).__name__)
+        elif raw:
+            return raw
+    if profile() == "prod":
+        raise RuntimeError(
+            "FUSION_GATEWAY_API_KEY not set and shell.gateway_admin_key absent — "
+            "obtain from gateway admin API, see architecture/config-conventions.md"
+        )
+    if "FUSION_GATEWAY_API_KEY" not in _ANON_WARNED:
+        _ANON_WARNED.add("FUSION_GATEWAY_API_KEY")
+        logger.warning("anonymous dev mode: FUSION_GATEWAY_API_KEY not set (obtain from gateway admin API)")
+    return ""
