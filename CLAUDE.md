@@ -33,7 +33,7 @@ ruff format --check .                              # verify formatting without w
 
 Tags matching `v*` trigger `.github/workflows/release.yml`, which builds wheel + sdist and attaches them to a GitHub Release. Before tagging, keep **4-way version consistency**: `pyproject.toml` `[project].version`, `fusion_core/__init__.py` `__version__` (resolved via `importlib.metadata`), the git tag, and the published GitHub Release must all agree. Conventional-commit scopes used historically: `feat(tenant)`, `fix(http)`, `release(vX.Y.Z)`, `style(docs)`.
 
-## Architecture — the 11 modules
+## Architecture — the 12 modules
 
 All public symbols are re-exported from `fusion_core/__init__.py`. Importing `fusion_core` performs **no I/O** — no env read, no file read, no network connection. Every default (`FUSION_MLX_URL`, `FUSION_GUARD_SOCK`, settings path) is resolved lazily at call time. This is a hard design rule: the library must be safe to import anywhere.
 
@@ -43,8 +43,9 @@ All public symbols are re-exported from `fusion_core/__init__.py`. Importing `fu
 ### `parse` — JSON from LLM output
 `parse_llm_json` raises `ParseError` on invalid JSON (no silent `{}` fallback). `parse_llm_json_safe` requires an explicit `default` (must be dict/list). `parse_llm_json_lenient` uses `raw_decode` to extract the first JSON object (scan cap 200k chars). `strip_code_fence` strips ```` ```json ```` fences. **Failures are visible, never silent** — this is deliberate; do not add fallbacks.
 
-### `config` — lazy settings + api_key
+### `config` — lazy settings + api_key + config-conventions single-point resolution
 `load_settings` (mtime-invalidated cache: settings file mtime change → cache miss), `resolve_api_key`, `load_api_key`, `get_env`, `default_mlx_base_url`, `clear_cache`. API key resolution order: env var → settings.json `auth.api_key` → empty string. `load_api_key(name="fusion-mlx")` derives env var `FUSION_MLX_API_KEY` and raises `KeyError` if absent.
+Since v0.7.0 (issues #31/#32) also the single-point resolution layer for `architecture/config-conventions.md`: `client_key()` alias chain `FUSION_CLIENT_KEY` → `FUSION_MLX_API_KEY` → `MLX_API_KEY` (legacy names warn, zero-downtime migration); `admin_key()` reads `FUSION_ADMIN_KEY` (no aliases); `profile()` reads `FUSION_PROFILE` — dev = warn-once + `""` (`_ANON_WARNED` set), prod = fail-fast 3-part `RuntimeError` (var name + obtain-from-gateway-admin-API + doc path); `gateway_base_url()` (`FUSION_GATEWAY_BASE_URL` → legacy `FUSION_GATEWAY_URL` warns → `http://127.0.0.1:11432`); `service_port(app, default)` / `service_data_dir(app, default)` read `FUSION_<APP>_PORT` / `_DATA_DIR` (dashes→underscores, upper), missing port hints port-registry.yaml, data-dir home default strips `fusion-` prefix. Domain apps must call these instead of hand-rolling `_resolve_*key` helpers (CI `scripts/check-env.py` flags bespoke ones).
 
 ### `logging` — idempotent logging init
 `setup_logging`, `get_logger`. Every `setLevel` applies; `propagate` defaults True so host root still receives logs; package-level `NullHandler` for library mode. Optional JSON format.
@@ -69,6 +70,9 @@ All public symbols are re-exported from `fusion_core/__init__.py`. Importing `fu
 
 ### `dsl_schema` — Socratic DSL v3.0 JSON Schema
 `SOCRATIC_DSL_V3_SCHEMA` (Draft 2020-12 dict) + `validate_dsl(dict) -> bool` + `validate_dsl_str(str) -> tuple[bool, str]`. Canonical contract shared across fusion-k12-teacher / fusion-bench / fusion-artifacts-engine / fusion-trainer. Enforces `meta` (id/grade/topic/visual_type/fallback_type), `parameters`, `entities`, `pipeline`; `visual_type` enum (8 values), `fallback_type` enum (2 values); pipeline step required fields. All objects `additionalProperties: false` (closed contract). `jsonschema` is **lazy-imported inside validators only** — `import fusion_core` stays I/O-free; install `[schema]` extra to enable. Source spec: `architecture/k12-train-model-autumation-1009.md`.
+
+### `proc` — process title (issue #30)
+`set_process_title(title)`. `setproctitle` is the only reliable title mechanism on macOS (Python.app overwrites `argv[0]`; `exec -a` unreliable). **Fail-open** — title is cosmetic, missing dep or any error logs at DEBUG and never blocks service startup. `setproctitle` is lazy-imported inside the function (never in `sys.modules` on plain `import fusion_core`); install `[proc]` extra to enable. Call once at service startup before the long-running loop.
 
 ## Cross-project boundaries (upstream deps, not editable here)
 

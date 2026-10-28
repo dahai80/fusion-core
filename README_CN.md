@@ -15,17 +15,18 @@ pip install -e fusion-core            # 基础（仅 httpx，核心依赖零业�
 pip install -e "fusion-core[test]"    # 加测试栈（pytest、ruff、fastapi、jsonschema）
 pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 pip install -e "fusion-core[schema]"  # 加 jsonschema（用于 dsl_schema 校验）
+pip install -e "fusion-core[proc]"    # 加 setproctitle（用于 set_process_title）
 ```
 
 要求：Python >=3.12。
 
-## 11 模块速查
+## 12 模块速查
 
 | 模块 | 关键符号 | 用途 |
 |------|----------|------|
 | `mlx_client` | `FusionMLXClient`、`create_async_client(*, backend=)`、`LLMResponse`、`EmbeddingResponse`、`ServerStats`、`StreamError` | 统一 MLX 推理客户端（chat / embedding / stream）。默认 base_url `localhost:11434`（运行时解析 `FUSION_MLX_URL`，指向 fusion-gateway 即多节点）。重试下沉 `http_client`。`chat(total_deadline=)` 为显式命名参数（R5）传端到端预算；`**kwargs` 白名单透传（`top_p`/`seed` 等）；`stream_chat` **所有**流失败路径抛 `StreamError(delivered=, resume_offset=)`（中断 severed 或 可重试耗尽无输出），调用方只认一种流失败类型（H4/R4）；不可重试 4xx 仍抛原 `HTTPStatusError`；`create_async_client(model=...)` 记默认 model；`health()` 复用 `probe_client` + 1s 节流不泄漏主连接；`get_server_stats()` 返回 `ServerStats` dataclass |
 | `parse` | `parse_llm_json`（抛 `ParseError` 不兜底）、`parse_llm_json_safe`（显式默认，default 必传 dict/list）、`parse_llm_json_lenient`（`raw_decode` 提取首个对象，扫描上限 200k）、`strip_code_fence` | LLM 输出 JSON 解析，**失败可见不静默** |
-| `config` | `load_settings`（mtime 失效缓存）、`resolve_api_key`、`load_api_key`、`get_env`、`default_mlx_base_url`、`clear_cache` | 配置懒加载 + api_key 解析 + 缓存失效（settings 文件 mtime 变即失效） |
+| `config` | `load_settings`（mtime 失效缓存）、`resolve_api_key`、`load_api_key`、`get_env`、`default_mlx_base_url`、`clear_cache`、`client_key`、`admin_key`、`profile`、`gateway_base_url`、`service_port`、`service_data_dir` | 配置懒加载 + api_key 解析 + 缓存失效（settings 文件 mtime 变即失效）。v0.7.0 起同时是 `architecture/config-conventions.md` 的**单点解析层**（issue #31/#32）：`client_key()` 按 `FUSION_CLIENT_KEY` → `FUSION_MLX_API_KEY` → `MLX_API_KEY` 别名链解析（旧名告警）；`admin_key()` 读 `FUSION_ADMIN_KEY`（无别名链）；`profile()` 读 `FUSION_PROFILE`（dev = 告警一次 + 返回 `""`，prod = 三段式 `RuntimeError`）；`gateway_base_url()` 默认 `http://127.0.0.1:11432`；`service_port(app, default)` / `service_data_dir(app, default)` 读 `FUSION_<APP>_PORT` / `_DATA_DIR`，报错带 port-registry 注册提示 |
 | `logging` | `setup_logging`、`get_logger` | 幂等日志初始化（每次 setLevel 生效，`propagate` 默认 True 不阻断 host root，区分包级 `NullHandler`），JSON 格式可选 |
 | `http_client` | `get_async_client`（per-loop 连接池，`OrderedDict` LRU 上限 8，驱逐只动同 loop 键）、`gateway_circuit_breaker_ok`（探活 gateway `/readyz`，H3/E4）、`with_retry`（full jitter，`disable=` + `verify_gateway=` 安全关重试交 gateway 熔断，`total_deadline=` 总预算；耗尽抛 `RetryExhaustedError`/`RetryTimeoutError`）、`close_all`、`close_all_sync`、`set_metrics_callback`、`get_metrics_snapshot`、`reset_metrics` | httpx async 客户端池 + 重试（重试码/异常单一来源 `RETRY_STATUS`/`RETRY_EXCEPTIONS`） |
 | `http` | `create_app`、`install_auth`、`standard_error_handler` | FastAPI 应用工厂 + 纯 ASGI 中间件（`install_auth` 重排 `user_middleware` 使 request_id 最外层——401 带同一 id，H1/E1；SSE 不截断；认证密钥封进中间件实例不落 `app.state`；422/500 同等脱敏；白名单路径 `rstrip` 规范化）。`create_app(readiness_probe=)` 挂载 `/ready`（就绪探针，200 ready / 503 not_ready，免鉴权），与 `/health`（存活探针）并列 |
@@ -34,6 +35,7 @@ pip install -e "fusion-core[schema]"  # 加 jsonschema（用于 dsl_schema 校�
 | `tenant` | `TenantContext`、`current`、`set_context`、`reset`、`has_scope`、`from_mapping`、`decode_jwt_claims`、`tenant_context_from_token`、`TenantMiddleware`、`install_tenant_middleware`、`get_tenant_dep` | L1 多租户织物。`TenantContext`（frozen-slots dataclass，基于 `contextvars`）按请求作用域携带 `tenant_id`/`user_id`/`role`/`jti`/`scopes`；`TenantMiddleware` 是**失败即关闭**的 ASGI 中间件——豁免路径跳过、缺 `X-Tenant-Id` → 401、JWT `tid ≠ X-Tenant-Id` → 401、`require_jwt=True` 时缺 bearer → 401，请求期间绑定上下文，`finally` 中 `reset()`（无跨请求泄漏）。`jwt_utils` 做 base64url 解码 + `exp` 校验，**不依赖 PyJWT、不做签名校验**——真实签名校验通过 `verify_jwt` 注入钩子完成（同步或异步均可；返回 awaitable 时会被 await，阻塞型校验器不会卡住事件循环——issues #23/#24；落在 fusion-identity）。`_JsonFormatter` 从 `current()` 自动注入 `tenant_id`/`user_id` 到日志记录。三语镜像锚点（Python 变体；Rust/Swift 变体落各自仓） |
 | `prompt_registry` | `PromptVersionRegistry`、`PromptVersionRecord`、`compute_version_id`、`is_valid_version_id` | prompt 模板不可变版本化 + 重放（issue #28）。内容寻址 `version_id`（name+text 的 sha256 前 16 hex）——改动即新版本，快照只写一次，每次读取重新校验 sha256（篡改抛 `SnapshotIntegrityError`）。`render(prompt_version, **vars)` 复原与当时完全一致的 prompt 字节（与 `PromptManager` 相同 `{{var}}` 语义）；`replay(prompt_version, client)` 经注入的 `FusionMLXClient` 重跑（指向 gateway `:11432` 即集群）。存储为纯文件：`versions/<id>.txt` + `index.json`，原子写入。无新依赖 |
 | `dsl_schema` | `SOCRATIC_DSL_V3_SCHEMA`、`validate_dsl`、`validate_dsl_str` | **Socratic DSL v3.0** 标准 JSON Schema（Draft 2020-12）——fusion-k12-teacher（生成）、fusion-bench（评估）、fusion-artifacts-engine（解析）、fusion-trainer（样本校验）的共享契约。强制 `meta`（id/grade/topic/visual_type/fallback_type）、`parameters`、`entities`、`pipeline` 及步骤必填字段（`step/title/formula/eval/result_unit/visual_state`）；`visual_type` 枚举 8 值（array_grid/tape_diagram/geometry_2d/isometric_3d/track_timeline/bucket_divider/data_chart/flow_card），`fallback_type` 枚举 2 值（tape_diagram/flow_card）。`validate_dsl(dict) -> bool` 与 `validate_dsl_str(str) -> tuple[bool, str]`（解析+校验，返回错误路径）。jsonschema 在校验函数内惰性导入——`import fusion_core` 保持零 I/O；装 `[schema]` extra 启用校验 |
+| `proc` | `set_process_title` | 进程标题助手（issue #30）。macOS 上 `setproctitle` 是唯一可靠的改标题机制（Python.app 会覆盖 `argv[0]`）；**fail-open**——标题纯属展示，缺 `setproctitle` 只打 DEBUG 日志绝不阻断服务启动。函数内惰性导入，`import fusion_core` 保持零 I/O 且 `setproctitle` 不进 `sys.modules`；装 `[proc]` extra 启用 |
 
 ## 用法
 
@@ -183,7 +185,7 @@ return LLMResult(content=result.content, model=result.model)
 ## 测试
 
 ```bash
-pytest tests/ -m "not integration"   # 单元：264 passed, 1 skipped（环境相关）
+pytest tests/ -m "not integration"   # 单元：301 passed, 1 skipped（环境相关）
 pytest tests/ -m integration          # 真实 fusion-mlx 引擎：7 passed, 0 skipped
 ruff check . && ruff format --check . # lint clean
 ```

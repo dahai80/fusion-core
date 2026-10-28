@@ -15,14 +15,20 @@ if not _logger.handlers:
     _logger.addHandler(_handler)
 
 from fusion_core.config import (  # noqa: E402
+    admin_key,
     clear_cache,
+    client_key,
     default_gateway_base_url,
     default_guard_sock,
     default_mlx_base_url,
+    gateway_base_url,
     get_env,
     load_api_key,
     load_settings,
+    profile,
     resolve_api_key,
+    service_data_dir,
+    service_port,
 )
 from fusion_core.dsl_schema import (  # noqa: E402
     SOCRATIC_DSL_V3_SCHEMA,
@@ -69,6 +75,7 @@ from fusion_core.parse import (  # noqa: E402
     parse_llm_json_safe,
     strip_code_fence,
 )
+from fusion_core.proc import set_process_title  # noqa: E402
 from fusion_core.prompt import PromptManager  # noqa: E402
 from fusion_core.prompt_registry import (  # noqa: E402
     PromptVersionError,
@@ -112,6 +119,12 @@ __all__ = [
     "resolve_api_key",
     "load_settings",
     "clear_cache",
+    "client_key",
+    "admin_key",
+    "gateway_base_url",
+    "service_port",
+    "service_data_dir",
+    "profile",
     "default_mlx_base_url",
     "default_gateway_base_url",
     "default_guard_sock",
@@ -129,6 +142,7 @@ __all__ = [
     "get_metrics_snapshot",
     "reset_metrics",
     "PromptManager",
+    "set_process_title",
     "PromptVersionRegistry",
     "PromptVersionRecord",
     "PromptVersionError",
