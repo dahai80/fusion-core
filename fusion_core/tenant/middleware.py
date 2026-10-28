@@ -132,6 +132,7 @@ class TenantMiddleware:
             role=claims.get("role") if claims else None,
             jti=claims.get("jti") if claims else None,
             scopes=tuple(claims.get("scope") or claims.get("scopes") or ()) if claims else (),
+            authenticated=claims is not None,
         )
         token_ctx = set_context(ctx)
         try:

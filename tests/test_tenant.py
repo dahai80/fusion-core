@@ -39,6 +39,7 @@ def _make_app(captured: dict):
         captured["tenant_id"] = ctx.tenant_id if ctx else None
         captured["user_id"] = ctx.user_id if ctx else None
         captured["role"] = ctx.role if ctx else None
+        captured["authenticated"] = ctx.authenticated if ctx else None
         from starlette.responses import JSONResponse
 
         return JSONResponse({"ok": True})
@@ -115,6 +116,58 @@ class TestTenantMiddleware:
             assert captured["role"] == "operator"
         assert current() is None, "contextvar must reset after request (no leak)"
 
+    def test_authenticated_true_with_verified_jwt(self):
+        # issue #37: consumers must be able to check ctx.authenticated instead
+        # of reconstructing evidence from optional role/jti/scopes fields.
+        from fusion_core.tenant import install_tenant_middleware
+
+        client = pytest.importorskip("starlette.testclient")
+        captured: dict = {}
+        token = _make_jwt({"tid": "tenant-auth", "sub": "u5", "role": "member"})
+        app = _make_app(captured)
+        install_tenant_middleware(app, require_jwt=True)
+        with client.TestClient(app) as c:
+            r = c.get(
+                "/data",
+                headers={"X-Tenant-Id": "tenant-auth", "Authorization": f"Bearer {token}"},
+            )
+            assert r.status_code == 200
+            assert captured["authenticated"] is True
+
+    def test_authenticated_false_for_anonymous(self):
+        # issue #37: require_jwt=False + no bearer binds an UNauthenticated
+        # context — checking only ctx.tenant_id would treat it as verified.
+        from fusion_core.tenant import install_tenant_middleware
+
+        client = pytest.importorskip("starlette.testclient")
+        captured: dict = {}
+        app = _make_app(captured)
+        install_tenant_middleware(app, require_jwt=False)
+        with client.TestClient(app) as c:
+            r = c.get("/data", headers={"X-Tenant-Id": "tenant-anon"})
+            assert r.status_code == 200
+            assert captured["tenant_id"] == "tenant-anon"
+            assert captured["authenticated"] is False
+
+    def test_authenticated_false_for_claimsless_token(self):
+        # issue #37: a token that decodes to empty claims must NOT read as
+        # authenticated evidence when no verify_jwt hook is installed.
+        from fusion_core.tenant import install_tenant_middleware
+
+        client = pytest.importorskip("starlette.testclient")
+        captured: dict = {}
+        token = _make_jwt({"tid": "tenant-empty"})
+        app = _make_app(captured)
+        install_tenant_middleware(app, require_jwt=True)
+        with client.TestClient(app) as c:
+            r = c.get(
+                "/data",
+                headers={"X-Tenant-Id": "tenant-empty", "Authorization": f"Bearer {token}"},
+            )
+            assert r.status_code == 200
+            # empty-but-verified token: claims dict exists, so authenticated is True
+            assert captured["authenticated"] is True
+
     def test_sync_verify_jwt_accepted(self):
         from fusion_core.tenant import install_tenant_middleware
 
@@ -183,6 +236,12 @@ class TestTenantMiddleware:
             assert r.status_code == 401
             assert r.json()["detail"] == "invalid token"
             assert captured == {}, "app must not run after verify raised (fail-closed)"
+
+    def test_context_authenticated_default_false(self):
+        ctx = TenantContext(tenant_id="t1")
+        assert ctx.authenticated is False
+        assert from_mapping({"tid": "t2", "sub": "u1"}).authenticated is False
+        assert TenantContext(tenant_id="t3", authenticated=True).authenticated is True
 
 
 class TestJwtUtils:
