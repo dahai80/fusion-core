@@ -63,6 +63,16 @@ from fusion_core.http_client import (  # noqa: E402
     with_retry,
 )
 from fusion_core.logging import get_logger, setup_logging  # noqa: E402
+from fusion_core.mcp_registry import (  # noqa: E402
+    ApprovalVerdict,
+    McpRegistryError,
+    McpServerRecord,
+    RegistryIntegrityError,
+    RegistryLookupError,
+    check_approval,
+    load_registry,
+    resolve_server,
+)
 from fusion_core.mlx_client import (  # noqa: E402
     EmbeddingResponse,
     FusionMLXClient,
@@ -136,6 +146,14 @@ __all__ = [
     "LLMResponse",
     "EmbeddingResponse",
     "create_async_client",
+    "McpServerRecord",
+    "ApprovalVerdict",
+    "McpRegistryError",
+    "RegistryIntegrityError",
+    "RegistryLookupError",
+    "load_registry",
+    "resolve_server",
+    "check_approval",
     "get_async_client",
     "with_retry",
     "gateway_circuit_breaker_ok",
