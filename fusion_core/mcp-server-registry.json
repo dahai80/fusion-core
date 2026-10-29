@@ -1,0 +1,28 @@
+{
+    "version": 1,
+    "comment": "Machine-readable source of truth for the MCP server registry. Consumed by fusion_core.mcp_registry. The markdown table in mcp-server-registry-1029.md is the human summary — keep both in sync when editing.",
+    "servers": [
+        {
+            "name": "fusion-cowork-mcp",
+            "transport": "stdio+http",
+            "port": 11438,
+            "purpose": "16 built-in tools (skills, workflow triggers) for Claude Desktop/Code",
+            "credential_mode": "identity_issuance",
+            "status": "approved",
+            "url_prefixes": ["http://127.0.0.1:11438"],
+            "tool_scopes": ["cowork.*"],
+            "notes": "shipped with cowork, see fusion-cowork/docs/api.md; gateway-issued fm- module keys, script packs admin-only"
+        },
+        {
+            "name": "mcp_client-node",
+            "transport": "streamable-http",
+            "port": null,
+            "purpose": "call external MCP tool servers from DAGs",
+            "credential_mode": "identity_issuance",
+            "status": "approved",
+            "url_prefixes": [],
+            "tool_scopes": [],
+            "notes": "cowork DAG node, HIGH_RISK; external targets approved per-URL by the operator (Permission.matches url: scope), so no global url_prefixes here"
+        }
+    ]
+}
