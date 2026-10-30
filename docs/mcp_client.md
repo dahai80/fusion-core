@@ -15,7 +15,7 @@ Moved from `business/ai-doc-automation/backend/mcp_client.py` (issue #42). No se
 ```python
 from fusion_core.mcp_client import McpToolClient, known_servers
 
-servers = known_servers()          # stdio-capable, non-deprecated servers
+servers = known_servers()  # stdio-capable, non-deprecated servers
 client = McpToolClient("fusion-cowork-mcp")
 result = await client.call_tool("sheet.write", {"range": "A1:B2", "values": [[...]]}, timeout_s=30)
 # result == {"ok": bool, "text": str, "raw": <full tools/call result>}
