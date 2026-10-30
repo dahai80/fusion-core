@@ -2,6 +2,8 @@
 
 MCP server registry: platform single source of truth for which MCP tool servers are approved across the Fusion ecosystem, and how their credentials are issued. Resolution layer for `architecture/mcp-server-registry-1029.md` (issue #40), mirroring how `config` is the resolution layer for config-conventions. No I/O at import, no new runtime deps (stdlib `json`).
 
+Paired with [`mcp_client`](mcp_client.md) (issue #42): the registry resolves *which* servers exist and are approved, the client *calls* them over stdio JSON-RPC. Since that issue the registry also validates an optional `stdio_command` (`command` / `args` / `env`) per server — the launch declaration `mcp_client` consumes.
+
 ## Symbols
 
 - [`REGISTRY_STATUS_LIFECYCLE`](#constants)

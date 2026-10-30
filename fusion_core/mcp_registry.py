@@ -37,6 +37,7 @@ class McpServerRecord:
     tool_scopes: tuple[str, ...] = ()
     port: int | None = None
     notes: str = ""
+    stdio_command: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +199,7 @@ def _parse_server(entry: object, path: Path, index: int) -> McpServerRecord:
         raise RegistryIntegrityError(f"{where} ({name!r}) port must be an int or null")
     url_prefixes = _parse_str_tuple(entry.get("url_prefixes", []), "url_prefixes", where, name)
     tool_scopes = _parse_str_tuple(entry.get("tool_scopes", []), "tool_scopes", where, name)
+    stdio_command = _parse_stdio_command(entry.get("stdio_command"), where, name)
     return McpServerRecord(
         name=name,
         transport=transport,
@@ -208,7 +210,25 @@ def _parse_server(entry: object, path: Path, index: int) -> McpServerRecord:
         tool_scopes=tool_scopes,
         port=port,
         notes=notes,
+        stdio_command=stdio_command,
     )
+
+
+def _parse_stdio_command(raw: object, where: str, name: str) -> dict | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise RegistryIntegrityError(f"{where} ({name!r}) stdio_command must be an object")
+    command = raw.get("command")
+    if not isinstance(command, str) or not command:
+        raise RegistryIntegrityError(f"{where} ({name!r}) stdio_command requires a non-empty string 'command'")
+    args = raw.get("args", [])
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        raise RegistryIntegrityError(f"{where} ({name!r}) stdio_command args must be a list of strings")
+    env = raw.get("env", {})
+    if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        raise RegistryIntegrityError(f"{where} ({name!r}) stdio_command env must be a string-to-string object")
+    return {"command": command, "args": list(args), "env": dict(env)}
 
 
 def _parse_str_tuple(raw: object, field_name: str, where: str, name: str) -> tuple[str, ...]:
