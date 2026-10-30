@@ -63,6 +63,11 @@ from fusion_core.http_client import (  # noqa: E402
     with_retry,
 )
 from fusion_core.logging import get_logger, setup_logging  # noqa: E402
+from fusion_core.mcp_client import (  # noqa: E402
+    McpToolClient,
+    McpToolError,
+    known_servers,
+)
 from fusion_core.mcp_registry import (  # noqa: E402
     ApprovalVerdict,
     McpRegistryError,
@@ -154,6 +159,9 @@ __all__ = [
     "load_registry",
     "resolve_server",
     "check_approval",
+    "McpToolClient",
+    "McpToolError",
+    "known_servers",
     "get_async_client",
     "with_retry",
     "gateway_circuit_breaker_ok",
