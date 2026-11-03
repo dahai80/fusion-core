@@ -273,7 +273,12 @@ class FusionMLXClient:
                         choices = data.get("choices")
                         if not choices:
                             continue
-                        content = choices[0].get("delta", {}).get("content", "")
+                        # Some gateway backends terminate the stream with a
+                        # {"choices": [null]} chunk — skip it (issue #44).
+                        choice = choices[0] if choices[0] else None
+                        if choice is None:
+                            continue
+                        content = (choice.get("delta") or {}).get("content") or ""
                         if content:
                             yielded += len(content)
                             yield content
