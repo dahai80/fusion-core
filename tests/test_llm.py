@@ -103,6 +103,47 @@ class TestStream:
         assert "".join(chunks) == "Hello"
         await client.close()
 
+    async def test_stream_chat_skips_null_choice_terminator(self):
+        # issue #44: some gateway backends emit {"choices": [null]} as the
+        # stream terminator — must be skipped, not crash with AttributeError.
+        sse = (
+            'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n'
+            'data: {"choices":[null]}\n\n'
+            'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n'
+            'data: {"choices":[null]}\n\n'
+            "data: [DONE]\n\n"
+        )
+
+        def handler(request):
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+
+        client = _make_client(handler)
+        chunks = []
+        async for c in client.stream_chat(model="m", messages=[{"role": "user", "content": "x"}]):
+            chunks.append(c)
+        assert "".join(chunks) == "Hello"
+        await client.close()
+
+    async def test_stream_chat_null_choice_missing_delta_is_silent(self):
+        # delta absent or None inside a surviving choice: contributes nothing,
+        # does not crash (issue #44 guard uses `or {}`).
+        sse = (
+            'data: {"choices":[{"delta":null}]}\n\n'
+            'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n'
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+            "data: [DONE]\n\n"
+        )
+
+        def handler(request):
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+
+        client = _make_client(handler)
+        chunks = []
+        async for c in client.stream_chat(model="m", messages=[{"role": "user", "content": "x"}]):
+            chunks.append(c)
+        assert "".join(chunks) == "ok"
+        await client.close()
+
     async def test_stream_error_carries_delivered_envelope(self):
         class _SeveredTransport(httpx.AsyncBaseTransport):
             async def handle_async_request(self, request):
