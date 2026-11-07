@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/guard-client-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "guard_client 模块", en: "guard_client module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/guard_client.py
+---
+
 # guard_client
 
 Pure-Python UDS JSON-RPC 2.0 client for **fusion-guard** — the zero-trust action-authorization daemon (Rust + Swift). Core stays pure-tech: this module is the wire-protocol adapter, not the policy engine. Block verdicts are results, not errors (E5).

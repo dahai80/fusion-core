@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/prompt-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "prompt 模块", en: "prompt module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/prompt.py
+---
+
 # prompt
 
 Prompt-template management. Engine only — no domain content. mtime-gated in-memory cache, `{{var}}` rendering.

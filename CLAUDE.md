@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/guide-claude
+product: fusion-core
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "仓库工程指南", en: "Repository engineering guide"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - CLAUDE.md
+---
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.

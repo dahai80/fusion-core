@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/http-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "http 模块（FastAPI 工厂）", en: "http module (FastAPI factory)"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/http
+---
+
 # http
 
 FastAPI app factory + pure-ASGI middleware. SSE-safe, request_id outermost, auth keys encapsulated, 422/500 sanitized equally.

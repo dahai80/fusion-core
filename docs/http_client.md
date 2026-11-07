@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/http-client-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "http_client 模块", en: "http_client module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/http_client.py
+---
+
 # http_client
 
 httpx async connection pool + retry. Single source of truth for retry codes/exceptions. Optional metrics hook for gateway aggregation.

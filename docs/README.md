@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/readme-docs
+product: fusion-core
+class: platform
+entry: developer
+doc_type: readme
+title: {zh: "模块文档索引", en: "Module docs index"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - docs
+---
+
 # fusion-core module reference
 
 Per-module API reference for fusion-core. Each doc covers signatures, params, returns, raised exceptions, and a runnable example.

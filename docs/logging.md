@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/logging-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "logging 模块", en: "logging module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/logging.py
+---
+
 # logging
 
 Idempotent logging init. Library-mode `NullHandler`, host-root propagation preserved, optional JSON.
