@@ -41,10 +41,12 @@ pip install -e "fusion-core[fastapi]"   # + fastapi, uvicorn, pydantic
 import asyncio
 from fusion_core import create_async_client, parse_llm_json
 
+
 async def main():
     client = create_async_client()
-    resp = await client.chat(messages=[{"role": "user", "content": "Reply with {\"ok\": true} only"}])
+    resp = await client.chat(messages=[{"role": "user", "content": 'Reply with {"ok": true} only'}])
     print(parse_llm_json(resp.content))
+
 
 asyncio.run(main())
 ```
@@ -67,7 +69,7 @@ from fusion_core.logging import setup_logging
 
 setup_logging("my-service")
 app = create_app("my-service", readiness_probe=lambda: True)  # async probe also accepted
-install_auth(app, api_keys=["local-dev-key"])   # never commit real keys
+install_auth(app, api_keys=["local-dev-key"])  # never commit real keys
 ```
 
 确认点：`uvicorn` 启动后 `GET /health` 200、`GET /ready` 200、无 key 的业务路由 401 且响应带与请求相同的 request_id。

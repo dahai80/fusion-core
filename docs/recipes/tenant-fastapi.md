@@ -28,9 +28,10 @@ from fusion_core import client_key
 from fusion_core.http import create_app, install_auth
 from fusion_core.tenant import get_tenant_dep, install_tenant_middleware, TenantContext
 
-app = create_app("my-service")                       # /health liveness mounted
-install_auth(app, api_keys=[client_key()])           # resolves FUSION_CLIENT_KEY at call time
-install_tenant_middleware(app, require_jwt=False)    # fail-closed on X-Tenant-Id
+app = create_app("my-service")  # /health liveness mounted
+install_auth(app, api_keys=[client_key()])  # resolves FUSION_CLIENT_KEY at call time
+install_tenant_middleware(app, require_jwt=False)  # fail-closed on X-Tenant-Id
+
 
 @app.get("/items")
 async def list_items(ctx: TenantContext = Depends(get_tenant_dep)):

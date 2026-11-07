@@ -30,9 +30,9 @@ log = logging.getLogger(__name__)
 
 setup_logging("my-service")
 
-api_key = client_key()        # FUSION_CLIENT_KEY -> FUSION_MLX_API_KEY -> MLX_API_KEY (warns)
-admin = admin_key()           # FUSION_ADMIN_KEY only, no aliases
-port = service_port("my-service", default=11500)      # reads FUSION_MY_SERVICE_PORT
+api_key = client_key()  # FUSION_CLIENT_KEY -> FUSION_MLX_API_KEY -> MLX_API_KEY (warns)
+admin = admin_key()  # FUSION_ADMIN_KEY only, no aliases
+port = service_port("my-service", default=11500)  # reads FUSION_MY_SERVICE_PORT
 data_dir = service_data_dir("my-service", default="/tmp/my-service")
 ```
 
