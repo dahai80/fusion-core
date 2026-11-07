@@ -1,3 +1,20 @@
+---
+doc_id: fusion-core/mcp-registry-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "mcp_registry 模块", en: "mcp_registry module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/mcp_registry.py
+  - fusion_core/mcp-server-registry.json
+---
+
 # mcp_registry
 
 MCP server registry: platform single source of truth for which MCP tool servers are approved across the Fusion ecosystem, and how their credentials are issued. Resolution layer for `architecture/mcp-server-registry-1029.md` (issue #40), mirroring how `config` is the resolution layer for config-conventions. No I/O at import, no new runtime deps (stdlib `json`).

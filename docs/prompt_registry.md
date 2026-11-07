@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/prompt-registry-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "prompt_registry 模块", en: "prompt_registry module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/prompt_registry.py
+---
+
 # prompt_registry
 
 Immutable prompt-template versioning + replay — closes the reproducibility gap (issue #28): every AI output can be recorded with `(trace_id, prompt_version, model_version)` and re-materialized later from `(prompt_version, input)`. Cross-app reusable (originated from ai-speech-exam gap G3, contains no business logic).

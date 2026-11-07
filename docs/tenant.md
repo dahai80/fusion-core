@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/tenant-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "tenant 模块", en: "tenant module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/tenant
+---
+
 # tenant
 
 L1 multi-tenant fabric. `TenantContext` (frozen-slots dataclass over `contextvars`) carries `tenant_id`/`user_id`/`role`/`jti`/`scopes` request-scoped; `TenantMiddleware` is a **fail-closed** ASGI middleware. Core stays pure-tech: this module owns the context plumbing + header/claims extraction, not token signing or signature verification (that lives in fusion-identity).

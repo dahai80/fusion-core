@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/mlx-client-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "mlx_client 模块", en: "mlx_client module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/mlx_client.py
+---
+
 # mlx_client
 
 Unified MLX inference client — chat, embedding, streaming. Retry delegated to `http_client`. Single-process single-engine; multi-node via `FUSION_MLX_URL` → fusion-gateway.

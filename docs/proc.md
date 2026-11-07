@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/proc-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "proc 模块", en: "proc module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/proc.py
+---
+
 # proc
 
 Process-title helper (issue #30). `setproctitle` is the only reliable title mechanism on macOS — Python.app overwrites `argv[0]` and `exec -a` is unreliable. Fail-open by design: title is cosmetic, service must start.

@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/dsl-schema-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "dsl_schema 模块", en: "dsl_schema module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/dsl_schema.py
+---
+
 # dsl_schema
 
 Canonical JSON Schema for the **Socratic DSL v3.0** — the shared contract across fusion-k12-teacher (generate), fusion-bench (evaluate), fusion-artifacts-engine (parse), and fusion-trainer (sample validation).

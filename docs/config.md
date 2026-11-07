@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/config-reference-module
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "config 模块", en: "config module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/config.py
+---
+
 # config
 
 Lazy settings load, api_key resolution, mtime-invalidated cache. No I/O at import. Since v0.7.0 also the single-point resolution layer for `architecture/config-conventions.md` (issues #31/#32): global secrets, profile, gateway URL, per-service port/data-dir.

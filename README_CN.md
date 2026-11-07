@@ -1,3 +1,20 @@
+---
+doc_id: fusion-core/readme-cn
+product: fusion-core
+class: platform
+entry: developer
+doc_type: readme
+title: {zh: "Fusion-Core 公共技术底座（中文）", en: "Fusion-Core shared technical foundation (Chinese)"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - README_CN.md
+  - pyproject.toml
+---
+
 # fusion-core
 
 > Fusion 生态公共技术底座。纯技术，零业务逻辑。

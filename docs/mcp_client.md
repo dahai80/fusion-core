@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/mcp-client-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "mcp_client 模块", en: "mcp_client module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/mcp_client.py
+---
+
 # mcp_client
 
 Thin stdio JSON-RPC client for MCP tool servers, paired with [`mcp_registry`](mcp_registry.md): the registry resolves *which* servers exist and are approved, this module *calls* them.

@@ -1,3 +1,20 @@
+---
+doc_id: fusion-core/readme
+product: fusion-core
+class: platform
+entry: developer
+doc_type: readme
+title: {zh: "Fusion-Core 公共技术底座", en: "Fusion-Core shared technical foundation"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - README.md
+  - pyproject.toml
+---
+
 # fusion-core
 
 > Shared technical foundation for the Fusion ecosystem. Pure-tech, zero business logic.

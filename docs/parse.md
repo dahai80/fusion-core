@@ -1,3 +1,19 @@
+---
+doc_id: fusion-core/parse-reference
+product: fusion-core
+class: platform
+entry: developer
+doc_type: api-reference
+title: {zh: "parse 模块", en: "parse module"}
+audience: engineer
+status: draft
+version: 0.10.1
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - fusion_core/parse.py
+---
+
 # parse
 
 LLM-output JSON parsing. Failures are visible, never silent.
