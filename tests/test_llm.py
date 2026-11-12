@@ -515,3 +515,83 @@ class TestHealthIsolation:
         assert await client.health() is True
         assert client._client is None, "health() must not leak into the persistent client"
         await client.close()
+
+
+class TestExtraBody:
+    # issue #49: engine-specific payload fields pass through extra_body.
+
+    async def test_extra_body_reaches_wire_payload(self):
+        sent = {}
+
+        def handler(request):
+            sent["payload"] = json.loads(request.content)
+            return _chat_handler(request)
+
+        client = _make_client(handler, max_retries=0)
+        gbnf = {"grammar": 'root ::= "ok"'}
+        await client.chat(
+            model="test-model",
+            messages=[{"role": "user", "content": "x"}],
+            extra_body={"chat_template_kwargs": gbnf},
+        )
+        assert sent["payload"]["chat_template_kwargs"] == {"grammar": 'root ::= "ok"'}
+        await client.close()
+
+    async def test_extra_body_collision_explicit_param_wins(self, caplog):
+        import logging
+
+        sent = {}
+
+        def handler(request):
+            sent["payload"] = json.loads(request.content)
+            return _chat_handler(request)
+
+        client = _make_client(handler, max_retries=0)
+        with caplog.at_level(logging.WARNING, logger="fusion_core.mlx_client"):
+            await client.chat(
+                model="test-model",
+                messages=[{"role": "user", "content": "x"}],
+                temperature=0.2,
+                extra_body={"temperature": 0.9, "chat_template_kwargs": {"a": 1}},
+            )
+        assert sent["payload"]["temperature"] == 0.2
+        assert sent["payload"]["chat_template_kwargs"] == {"a": 1}
+        assert any("temperature" in r.message for r in caplog.records)
+        await client.close()
+
+    async def test_extra_body_empty_and_none_noop(self):
+        sent = {}
+
+        def handler(request):
+            sent["payload"] = json.loads(request.content)
+            return _chat_handler(request)
+
+        client = _make_client(handler, max_retries=0)
+        await client.chat(
+            model="test-model",
+            messages=[{"role": "user", "content": "x"}],
+            extra_body=None,
+        )
+        assert "chat_template_kwargs" not in sent["payload"]
+        await client.close()
+
+    async def test_stream_chat_extra_body_reaches_wire_payload(self):
+        sse = 'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\ndata: [DONE]\n\n'
+        sent = {}
+
+        def handler(request):
+            sent["payload"] = json.loads(request.content)
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+
+        client = _make_client(handler)
+        chunks = []
+        async for c in client.stream_chat(
+            model="m",
+            messages=[{"role": "user", "content": "x"}],
+            extra_body={"chat_template_kwargs": {"grammar": "g"}},
+        ):
+            chunks.append(c)
+        assert "".join(chunks) == "Hi"
+        assert sent["payload"]["chat_template_kwargs"] == {"grammar": "g"}
+        assert sent["payload"]["stream"] is True
+        await client.close()
