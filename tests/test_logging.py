@@ -104,3 +104,82 @@ class TestRotatingFileHandler:
             for h in list(logger.handlers):
                 h.close()
                 logger.removeHandler(h)
+
+
+class TestExtraFields:
+    # issue #50: extra={} fields rendered by both formatters.
+
+    def test_json_formatter_renders_extra_fields(self, capsys):
+        logger = setup_logging("fusion_test_extra_json", json_format=True)
+        logger.info("handled", extra={"request_id": "r1", "attempt": 2})
+        captured = capsys.readouterr()
+        payload = json.loads(captured.err.strip().splitlines()[-1])
+        assert payload["request_id"] == "r1"
+        assert payload["attempt"] == 2
+        assert payload["msg"] == "handled"
+        logger.handlers.clear()
+
+    def test_text_formatter_renders_extra_fields(self, capsys):
+        logger = setup_logging("fusion_test_extra_text")
+        logger.info("handled", extra={"request_id": "r1"})
+        captured = capsys.readouterr()
+        line = captured.err.strip().splitlines()[-1]
+        assert "handled" in line
+        assert "request_id='r1'" in line
+        logger.handlers.clear()
+
+    def test_no_extra_fields_unchanged_output(self, capsys):
+        logger = setup_logging("fusion_test_extra_none", json_format=True)
+        logger.info("plain")
+        captured = capsys.readouterr()
+        payload = json.loads(captured.err.strip().splitlines()[-1])
+        assert "request_id" not in payload
+        logger.handlers.clear()
+
+
+class TestRootMode:
+    # issue #50: root-logger mode for legacy-pattern app migration.
+
+    def test_root_mode_attaches_to_root_logger(self, capsys):
+        # pytest attaches its own root handler, which would trip the
+        # already-configured guard — save and clear root handlers first.
+        saved = logging.getLogger().handlers[:]
+        for h in saved:
+            logging.getLogger().removeHandler(h)
+        try:
+            logger = setup_logging(root=True)
+            assert logger is logging.getLogger()
+            assert len(logger.handlers) >= 1
+            logger.info("from root")
+            captured = capsys.readouterr()
+            assert "from root" in captured.err
+        finally:
+            for h in logging.getLogger().handlers[:]:
+                logging.getLogger().removeHandler(h)
+                h.close()
+            for h in saved:
+                logging.getLogger().addHandler(h)
+
+    def test_root_mode_idempotent(self):
+        saved = logging.getLogger().handlers[:]
+        for h in saved:
+            logging.getLogger().removeHandler(h)
+        try:
+            logger1 = setup_logging(root=True)
+            n1 = len(logger1.handlers)
+            logger2 = setup_logging(root=True)
+            assert logger1 is logger2
+            assert len(logger2.handlers) == n1
+        finally:
+            for h in logging.getLogger().handlers[:]:
+                logging.getLogger().removeHandler(h)
+                h.close()
+            for h in saved:
+                logging.getLogger().addHandler(h)
+
+    def test_named_mode_still_works_after_root(self, capsys):
+        logger = setup_logging("fusion_test_after_root")
+        logger.info("named still fine")
+        captured = capsys.readouterr()
+        assert "named still fine" in captured.err
+        logger.handlers.clear()

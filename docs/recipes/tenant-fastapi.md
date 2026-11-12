@@ -7,7 +7,7 @@ doc_type: recipe
 title: {zh: "Recipe：给 FastAPI 服务装上鉴权与租户中间件", en: "Recipe: add auth and tenant middleware to a FastAPI service"}
 audience: engineer
 status: draft
-version: 0.11.0
+version: 0.12.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

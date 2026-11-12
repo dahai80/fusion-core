@@ -7,8 +7,8 @@ doc_type: api-reference
 title: {zh: "mlx_client 模块", en: "mlx_client module"}
 audience: engineer
 status: draft
-version: 0.11.0
-updated: 2026-11-07
+version: 0.12.0
+updated: 2026-11-12
 owner: "@dahai"
 source_of_truth:
   - fusion_core/mlx_client.py
@@ -107,11 +107,21 @@ async def chat(
     max_tokens: int = 4096,
     stream: bool = False,
     total_deadline: float | None = None,
+    extra_body: dict | None = None,
     **kwargs,
 ) -> LLMResponse
 ```
 
 Non-streaming chat. `stream=True` raises `ValueError` (use `stream_chat`). `**kwargs` allowlist-passed into the payload: `top_p`, `seed`, `response_format`, `user`, `n`, `presence_penalty`, `frequency_penalty`, `stop`, `logit_bias`, `logprobs`, `top_logprobs`. Non-allowlisted kwargs logged-and-dropped.
+
+`extra_body` (issue #49): engine-specific payload fields merged into the request verbatim — shallow merge, explicit params win on collision (conflicting keys dropped with a warning). Use it for fields like `chat_template_kwargs` (GBNF grammar constraints) that the allowlist does not cover:
+
+```python
+resp = await client.chat(
+    messages=[{"role": "user", "content": "generate"}],
+    extra_body={"chat_template_kwargs": {"grammar": 'root ::= "ok"'}},
+)
+```
 
 `total_deadline` (R5) is an **explicit named param** — the end-to-end budget passed to `with_retry` in seconds. Accepted as a kwarg too (legacy compat) but the explicit form is preferred; neither path logs a spurious "dropping" warning.
 
@@ -128,8 +138,12 @@ Shortcut: `chat(...).content`. `total_deadline` forwarded to `chat` (R5).
 ### stream_chat
 
 ```python
-async def stream_chat(self, messages, model=None, temperature=0.7, max_tokens=4096) -> AsyncIterator[str]
+async def stream_chat(
+    self, messages, model=None, temperature=0.7, max_tokens=4096, extra_body: dict | None = None
+) -> AsyncIterator[str]
 ```
+
+`extra_body` behaves identically to `chat` (issue #49) — merged into the streaming request payload after `stream: True`.
 
 SSE streaming. Yields `delta.content` chunks. Pre-output retriable failures (`RETRY_STATUS` / `RETRY_EXCEPTIONS`, `attempt < max_retries`, `not yielded`) retry. All non-retried failure paths surface as `StreamError` (H4/R4 — see [StreamError](#streamerror)): partial-output failure → `StreamError(delivered=yielded)`; retriable-but-exhausted-no-output → `StreamError(delivered=0)`. Only non-retriable 4xx re-raise the original `HTTPStatusError`.
 

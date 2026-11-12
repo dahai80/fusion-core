@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "mcp_registry 模块", en: "mcp_registry module"}
 audience: engineer
 status: draft
-version: 0.11.0
+version: 0.12.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

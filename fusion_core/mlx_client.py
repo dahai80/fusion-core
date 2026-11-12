@@ -164,6 +164,19 @@ class FusionMLXClient:
             raise ValueError("chat requires model: pass model= or set create_async_client(model=...)")
         return resolved
 
+    @staticmethod
+    def _apply_extra_body(payload: dict, extra_body: dict | None) -> None:
+        # Shallow merge of engine-specific fields (issue #49, e.g. chat_template_kwargs).
+        # Explicit params already in the payload win on collision — the extra value is
+        # dropped with a warning instead of silently overriding.
+        if not extra_body:
+            return
+        for key, value in extra_body.items():
+            if key in payload:
+                logger.warning("extra_body key %s conflicts with explicit param, keeping explicit value", key)
+                continue
+            payload[key] = value
+
     async def chat(
         self,
         messages: list[dict],
@@ -173,6 +186,7 @@ class FusionMLXClient:
         max_tokens: int = 4096,
         stream: bool = False,
         total_deadline: float | None = None,
+        extra_body: dict | None = None,
         **kwargs,
     ) -> LLMResponse:
         resolved = self._resolve_model(model)
@@ -198,6 +212,7 @@ class FusionMLXClient:
                 payload[key] = value
             else:
                 logger.warning("chat dropping non-allowlisted kwarg %s=%r", key, value)
+        self._apply_extra_body(payload, extra_body)
 
         resp = await with_retry(
             lambda: self.client.post("/chat/completions", json=payload),
@@ -244,6 +259,7 @@ class FusionMLXClient:
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        extra_body: dict | None = None,
     ) -> AsyncIterator[str]:
         resolved = self._resolve_model(model)
         payload = {
@@ -253,6 +269,7 @@ class FusionMLXClient:
             "max_tokens": max_tokens,
             "stream": True,
         }
+        self._apply_extra_body(payload, extra_body)
 
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):

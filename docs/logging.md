@@ -7,8 +7,8 @@ doc_type: api-reference
 title: {zh: "logging 模块", en: "logging module"}
 audience: engineer
 status: draft
-version: 0.11.0
-updated: 2026-11-07
+version: 0.12.0
+updated: 2026-11-12
 owner: "@dahai"
 source_of_truth:
   - fusion_core/logging.py
@@ -20,14 +20,14 @@ Idempotent logging init. Library-mode `NullHandler`, host-root propagation prese
 
 ## Symbols
 
-- [`setup_logging(name, *, level, json_format, log_file, propagate, max_bytes, backup_count)`](#setup_logging)
+- [`setup_logging(name, *, level, json_format, log_file, propagate, max_bytes, backup_count, root)`](#setup_logging)
 - [`get_logger(name)`](#get_logger)
 
 ## setup_logging
 
 ```python
 def setup_logging(
-    name: str,
+    name: str = "fusion",
     *,
     level: str = "INFO",
     json_format: bool = False,
@@ -35,6 +35,7 @@ def setup_logging(
     propagate: bool = True,
     max_bytes: int | None = None,
     backup_count: int = 3,
+    root: bool = False,
 ) -> logging.Logger
 ```
 
@@ -47,6 +48,20 @@ setup_logging("svc", log_file="/var/log/svc/app.log", max_bytes=10 * 1024 * 1024
 - `level` — string name (`"INFO"`, `"DEBUG"`, ...); invalid → `ValueError`.
 - `json_format=True` — `_JsonFormatter`: `{"ts","level","name","msg"}` (+`exc` if present), `ensure_ascii=False`, ISO-8601 UTC.
 - `propagate=True` (default, A6) — logger bubbles to host root, so a host's unified JSON collector receives fusion-core logs. The old unconditional `propagate=False` broke cross-module log correlation; do not set `False` unless you intentionally detach.
+- `root=True` (issue #50) — attaches handlers to the **root logger** instead of `name`, for business apps migrating from root-logger patterns (`logging.basicConfig`-style). `name` is ignored; `propagate` is forced `False` (the root logger does not propagate). Idempotent via the same already-configured guard as named loggers.
+
+## extra={} fields
+
+Fields passed via the stdlib `extra={}` convention (issue #50) are rendered by both formatters — anything in the `LogRecord` that is not a standard logging attribute is treated as an extra field:
+
+- `json_format=True` — extras merge into the JSON payload top level: `{"ts", "level", "name", "msg", "request_id": "r1", ...}`
+- Text format — extras append as `key=value` pairs, sorted for stable output: `... : handled request_id='r1'`
+
+```python
+log = get_logger("svc")
+log.info("handled", extra={"request_id": "r1", "attempt": 2})
+# JSON: {"ts": "...", "level": "INFO", "name": "svc", "msg": "handled", "request_id": "r1", "attempt": 2}
+```
 
 ```python
 from fusion_core import setup_logging

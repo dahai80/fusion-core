@@ -7,8 +7,8 @@ doc_type: changelog
 title: {zh: "Fusion-Core 变更日志", en: "Fusion-Core Changelog"}
 audience: engineer
 status: draft
-version: 0.11.0
-updated: 2026-11-07
+version: 0.12.0
+updated: 2026-11-12
 owner: "@dahai"
 source_of_truth:
   - pyproject.toml
@@ -17,6 +17,13 @@ source_of_truth:
 # Changelog
 
 All notable changes are documented here. Format follows Keep a Changelog; versioning is semver.
+
+## [0.12.0] - 2026-11-12
+
+### Added
+- mlx_client: `chat(..., extra_body=)` / `stream_chat(..., extra_body=)` — engine-specific payload fields (e.g. `chat_template_kwargs` for GBNF grammar constraints) merged into the request verbatim; shallow merge, explicit params win on collision (conflicting keys warn-and-drop); the unknown-kwarg drop warning stays for typo protection (#49). Unblocks the BNUP K12 training path.
+- logging: `extra={}` fields rendered by both formatters — any non-standard `LogRecord` attribute is treated as an extra field (JSON: merged top-level; text: `key=value` suffix, sorted) (#50). Existing `logger.info(..., extra={...})` calls keep their fields.
+- logging: `setup_logging(root=True)` — attaches handlers to the root logger for business apps migrating from root-logger (`basicConfig`-style) patterns; idempotent via the same already-configured guard (#50).
 
 ## [0.11.0] - 2026-11-12
 
