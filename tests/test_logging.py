@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 
 from fusion_core.logging import get_logger, setup_logging
 
@@ -70,3 +71,36 @@ class TestGetLogger:
         finally:
             root_logger.handlers = saved_handlers
             root_logger.propagate = saved_propagate
+
+
+class TestRotatingFileHandler:
+    def test_max_bytes_enables_rotation(self, tmp_path):
+        log_file = tmp_path / "rot" / "app.log"
+        logger = setup_logging("fusion_rot_test", level="INFO", log_file=log_file, max_bytes=200, backup_count=3)
+        try:
+            handlers = [h for h in logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
+            assert len(handlers) == 1
+            assert handlers[0].maxBytes == 200
+            assert handlers[0].backupCount == 3
+            for i in range(20):
+                logger.info("rotation probe line %d with some padding text", i)
+            for h in logger.handlers:
+                h.flush()
+            rolled = sorted(p.name for p in log_file.parent.glob("app.log*"))
+            assert "app.log" in rolled
+            assert len(rolled) > 1, f"expected rotation, got {rolled}"
+        finally:
+            for h in list(logger.handlers):
+                h.close()
+                logger.removeHandler(h)
+
+    def test_no_max_bytes_plain_file_handler(self, tmp_path):
+        log_file = tmp_path / "plain.log"
+        logger = setup_logging("fusion_plain_test", level="INFO", log_file=log_file)
+        try:
+            assert any(isinstance(h, logging.FileHandler) for h in logger.handlers)
+            assert not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers)
+        finally:
+            for h in list(logger.handlers):
+                h.close()
+                logger.removeHandler(h)

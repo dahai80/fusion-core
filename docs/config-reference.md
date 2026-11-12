@@ -7,7 +7,7 @@ doc_type: config-reference
 title: {zh: "Fusion-Core 配置参考", en: "Fusion-Core Config Reference"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "Fusion-Core 公共技术底座", en: "Fusion-Core shared technical foundation"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -37,7 +37,7 @@ pip install -e "fusion-core[proc]"    # + setproctitle (for set_process_title)
 
 Requirements: Python >=3.12.
 
-## 14 modules at a glance
+## 15 modules at a glance
 
 | Module | Key symbols | Purpose |
 |--------|-------------|---------|
@@ -54,6 +54,7 @@ Requirements: Python >=3.12.
 | `dsl_schema` | `SOCRATIC_DSL_V3_SCHEMA`, `validate_dsl`, `validate_dsl_str` | Canonical JSON Schema (Draft 2020-12) for the **Socratic DSL v3.0** — the shared contract across fusion-k12-teacher (generate), fusion-bench (evaluate), fusion-artifacts-engine (parse), fusion-trainer (sample validation). Enforces `meta` (id/grade/topic/visual_type/fallback_type), `parameters`, `entities`, `pipeline` with step required fields (`step/title/formula/eval/result_unit/visual_state`); `visual_type` enum (8 values: array_grid/tape_diagram/geometry_2d/isometric_3d/track_timeline/bucket_divider/data_chart/flow_card), `fallback_type` enum (2 values: tape_diagram/flow_card). `validate_dsl(dict) -> bool` and `validate_dsl_str(str) -> tuple[bool, str]` (parse + validate, returns error path). jsonschema is a lazy import inside validators — `import fusion_core` stays I/O-free; install `[schema]` extra to enable validation |
 | `mcp_registry` | `load_registry` (mtime-invalidated cache), `resolve_server`, `check_approval`, `McpServerRecord`, `ApprovalVerdict` | MCP server registry — resolution layer for `architecture/mcp-server-registry-1029.md` (issue #40), mirroring how `config` resolves config-conventions. Platform single source of truth for which MCP tool servers are `approved` (status lifecycle proposed → reviewed → approved → deprecated; only approved may be referenced). JSON sidecar `architecture/mcp-server-registry.json` (stdlib json, zero new deps; mirrored as bundled `fusion_core/mcp-server-registry.json` for pip installs / CI — edit all three plus the md table). `check_approval(url, tool_scope)` returns a verdict — **result, not error** (E5 pattern): url-prefix match (same semantics as cowork `Permission.matches` `url:` scopes, trailing slashes normalized), **longest prefix wins**, non-approved status → denied, tool scope exact / `*` / `ns.*` wildcard, no url match → `unknown` (per-URL operator approval decides). Credential mode is declaration only (`identity_issuance` / `env_ref`) — no secrets stored, no network calls, no MCP client, no enforcement defaults (callers decide warn vs block). Malformed registry → `RegistryIntegrityError` (fail visibly). Default path from `FUSION_MCP_REGISTRY`, resolved lazily at call time |
 | `mcp_client` | `McpToolClient`, `McpToolError`, `known_servers` | Thin stdio JSON-RPC client for MCP tool servers (issue #42), paired with `mcp_registry`: registry resolves *which* servers exist and are approved, client *calls* them. Pure move from ai-doc-automation. `known_servers()` returns `name -> McpServerRecord` for `proposed`/`approved` servers declaring a `stdio_command`; `McpToolClient.call_tool(tool, arguments, timeout_s=30)` speaks minimal JSON-RPC over stdio (initialize → `notifications/initialized` → `tools/call`), spawn-per-call, returns `{"ok": bool, "text": str, "raw": result}` — **`isError` is a result, not an error** (E5 pattern); transport/protocol/timeout failures raise `McpToolError`. `stdio_command.env` values with an `env:VAR` prefix resolve from the operator's environment at call time — credentials never stored in the registry. Registry path through `mcp_registry.default_registry_path()` (`FUSION_MCP_REGISTRY` env → monorepo sidecar → bundled copy). stdio only (no HTTP/SSE), no registry writes; import stays I/O-free |
+| `errors` | `FusionError` | Shared error tree base (issue #47). Class-level defaults `code` / `http_status` / `remediation`, overridable per raise; structured `context` copied at construction; `to_http()` returns a sanitized `{status, code, message, remediation, context}` payload for API error handlers. Wrap upstream failures with `raise ... from` so the chain stays intact. Replaces private per-app error trees |
 | `proc` | `set_process_title` | Process-title helper (issue #30). `setproctitle` is the only reliable title mechanism on macOS (Python.app overwrites `argv[0]`); **fail-open** — title is cosmetic, a missing `setproctitle` logs at DEBUG and never blocks service startup. Lazy import inside the function keeps `import fusion_core` I/O-free and `setproctitle` out of `sys.modules`; install `[proc]` extra to enable |
 
 ## Usage
@@ -206,7 +207,7 @@ return LLMResult(content=result.content, model=result.model)
 ## Testing
 
 ```bash
-pytest tests/ -m "not integration"   # unit: 378 passed, 1 skipped (env-only)
+pytest tests/ -m "not integration"   # unit: 393 passed, 1 skipped (env-only)
 pytest tests/ -m integration          # real fusion-mlx engine: 7 passed, 0 skipped
 ruff check . && ruff format --check . # lint clean
 ```

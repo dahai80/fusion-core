@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "Fusion-Core 公共技术底座（中文）", en: "Fusion-Core shared technical foundation (Chinese)"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -37,7 +37,7 @@ pip install -e "fusion-core[proc]"    # 加 setproctitle（用于 set_process_ti
 
 要求：Python >=3.12。
 
-## 14 模块速查
+## 15 模块速查
 
 | 模块 | 关键符号 | 用途 |
 |------|----------|------|
@@ -54,6 +54,7 @@ pip install -e "fusion-core[proc]"    # 加 setproctitle（用于 set_process_ti
 | `dsl_schema` | `SOCRATIC_DSL_V3_SCHEMA`、`validate_dsl`、`validate_dsl_str` | **Socratic DSL v3.0** 标准 JSON Schema（Draft 2020-12）——fusion-k12-teacher（生成）、fusion-bench（评估）、fusion-artifacts-engine（解析）、fusion-trainer（样本校验）的共享契约。强制 `meta`（id/grade/topic/visual_type/fallback_type）、`parameters`、`entities`、`pipeline` 及步骤必填字段（`step/title/formula/eval/result_unit/visual_state`）；`visual_type` 枚举 8 值（array_grid/tape_diagram/geometry_2d/isometric_3d/track_timeline/bucket_divider/data_chart/flow_card），`fallback_type` 枚举 2 值（tape_diagram/flow_card）。`validate_dsl(dict) -> bool` 与 `validate_dsl_str(str) -> tuple[bool, str]`（解析+校验，返回错误路径）。jsonschema 在校验函数内惰性导入——`import fusion_core` 保持零 I/O；装 `[schema]` extra 启用校验 |
 | `mcp_registry` | `load_registry`（mtime 失效缓存）、`resolve_server`、`check_approval`、`McpServerRecord`、`ApprovalVerdict` | MCP 服务注册表——`architecture/mcp-server-registry-1029.md` 的解析层（issue #40），与 `config` 之于 config-conventions 同构。平台级单一事实来源：哪些 MCP 工具服务是 `approved`（状态生命周期 proposed → reviewed → approved → deprecated，仅 approved 可被引用）。JSON sidecar `architecture/mcp-server-registry.json`（stdlib json 零新依赖；pip 安装 / CI 环境回退到包内镜像 `fusion_core/mcp-server-registry.json`——新增服务三处 + md 表格同步改）。`check_approval(url, tool_scope)` 返回判定——**结果而非错误**（E5 模式）：URL 前缀匹配（与 cowork `Permission.matches` `url:` 语义一致，尾部斜杠归一），**最长前缀胜出**，非 approved 状态 → denied，工具 scope 精确 / `*` / `ns.*` 通配，无 URL 匹配 → `unknown`（由操作员按 URL 审批决定）。credential mode 仅为声明（`identity_issuance` / `env_ref`）——不存密钥、不联网、无 MCP 客户端、无强制默认（告警还是拦截由调用方决定）。注册表损坏 → `RegistryIntegrityError`（失败可见）。默认路径从 `FUSION_MCP_REGISTRY` 调用时惰性解析 |
 | `mcp_client` | `McpToolClient`、`McpToolError`、`known_servers` | MCP 工具服务的轻量 stdio JSON-RPC 客户端（issue #42），与 `mcp_registry` 配对：注册表解析*哪些*服务存在且已审批，客户端负责*调用*。自 ai-doc-automation 纯搬迁。`known_servers()` 返回声明了 `stdio_command` 的 `proposed`/`approved` 服务的 `name -> McpServerRecord`；`McpToolClient.call_tool(tool, arguments, timeout_s=30)` 走最小 stdio JSON-RPC（initialize → `notifications/initialized` → `tools/call`），每次调用起一个进程，返回 `{"ok": bool, "text": str, "raw": result}`——**`isError` 是结果而非错误**（E5 模式）；传输/协议/超时失败抛 `McpToolError`。`stdio_command.env` 中 `env:VAR` 前缀的值在调用时从操作员环境解析——密钥永不入注册表。注册表路径走 `mcp_registry.default_registry_path()`（`FUSION_MCP_REGISTRY` 环境变量 → monorepo sidecar → 包内镜像）。仅 stdio（无 HTTP/SSE）、不写注册表；导入保持零 I/O |
+| `errors` | `FusionError` | 共享错误树基类（issue #47）。类级默认 `code` / `http_status` / `remediation`，可按次抛出覆盖；结构化 `context` 构造时复制；`to_http()` 返回脱敏的 `{status, code, message, remediation, context}` 供 API 错误处理器直接用。上游失败用 `raise ... from` 包装保留异常链。替代各业务 app 私有错误树 |
 | `proc` | `set_process_title` | 进程标题助手（issue #30）。macOS 上 `setproctitle` 是唯一可靠的改标题机制（Python.app 会覆盖 `argv[0]`）；**fail-open**——标题纯属展示，缺 `setproctitle` 只打 DEBUG 日志绝不阻断服务启动。函数内惰性导入，`import fusion_core` 保持零 I/O 且 `setproctitle` 不进 `sys.modules`；装 `[proc]` extra 启用 |
 
 ## 用法
@@ -204,7 +205,7 @@ return LLMResult(content=result.content, model=result.model)
 ## 测试
 
 ```bash
-pytest tests/ -m "not integration"   # 单元：378 passed, 1 skipped（环境相关）
+pytest tests/ -m "not integration"   # 单元：393 passed, 1 skipped（环境相关）
 pytest tests/ -m integration          # 真实 fusion-mlx 引擎：7 passed, 0 skipped
 ruff check . && ruff format --check . # lint clean
 ```

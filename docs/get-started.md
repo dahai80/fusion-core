@@ -7,7 +7,7 @@ doc_type: get-started
 title: {zh: "Fusion-Core 快速上手", en: "Fusion-Core Get Started"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

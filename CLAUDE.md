@@ -7,7 +7,7 @@ doc_type: guide
 title: {zh: "仓库工程指南", en: "Repository engineering guide"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -49,7 +49,7 @@ ruff format --check .                              # verify formatting without w
 
 Tags matching `v*` trigger `.github/workflows/release.yml`, which builds wheel + sdist and attaches them to a GitHub Release. Before tagging, keep **4-way version consistency**: `pyproject.toml` `[project].version`, `fusion_core/__init__.py` `__version__` (resolved via `importlib.metadata`), the git tag, and the published GitHub Release must all agree. Conventional-commit scopes used historically: `feat(tenant)`, `fix(http)`, `release(vX.Y.Z)`, `style(docs)`.
 
-## Architecture — the 14 modules
+## Architecture — the 15 modules
 
 All public symbols are re-exported from `fusion_core/__init__.py`. Importing `fusion_core` performs **no I/O** — no env read, no file read, no network connection. Every default (`FUSION_MLX_URL`, `FUSION_GUARD_SOCK`, settings path) is resolved lazily at call time. This is a hard design rule: the library must be safe to import anywhere.
 
@@ -61,10 +61,13 @@ All public symbols are re-exported from `fusion_core/__init__.py`. Importing `fu
 
 ### `config` — lazy settings + api_key + config-conventions single-point resolution
 `load_settings` (mtime-invalidated cache: settings file mtime change → cache miss), `resolve_api_key`, `load_api_key`, `get_env`, `default_mlx_base_url`, `clear_cache`. API key resolution order: env var → settings.json `auth.api_key` → empty string. `load_api_key(name="fusion-mlx")` derives env var `FUSION_MLX_API_KEY` and raises `KeyError` if absent.
-Since v0.7.0 (issues #31/#32) also the single-point resolution layer for `architecture/config-conventions.md`: `client_key()` alias chain `FUSION_CLIENT_KEY` → `FUSION_MLX_API_KEY` → `MLX_API_KEY` (legacy names warn, zero-downtime migration); `admin_key()` reads `FUSION_ADMIN_KEY` (no aliases); `gateway_admin_key()` (issue #35) resolves `FUSION_GATEWAY_API_KEY` → settings.json `shell.gateway_admin_key` (the key the gateway actually accepts); `profile()` reads `FUSION_PROFILE` — dev = warn-once + `""` (`_ANON_WARNED` set), prod = fail-fast 3-part `RuntimeError` (var name + obtain-from-gateway-admin-API + doc path); `gateway_base_url()` (`FUSION_GATEWAY_BASE_URL` → legacy `FUSION_GATEWAY_URL` warns → `http://127.0.0.1:11432`); `service_port(app, default)` / `service_data_dir(app, default)` read `FUSION_<APP>_PORT` / `_DATA_DIR` with the `fusion-` prefix stripped first (issues #34/#36 — `"fusion-rag"` and `"rag"` resolve identically, never `FUSION_FUSION_RAG_PORT`), missing port hints port-registry.yaml. Domain apps must call these instead of hand-rolling `_resolve_*key` helpers (CI `scripts/check-env.py` flags bespoke ones).
+Since v0.7.0 (issues #31/#32) also the single-point resolution layer for `architecture/config-conventions.md`: `client_key()` alias chain `FUSION_CLIENT_KEY` → `FUSION_MLX_API_KEY` → `MLX_API_KEY` (legacy names warn, zero-downtime migration); `admin_key()` reads `FUSION_ADMIN_KEY` (no aliases); `gateway_admin_key()` (issue #35) resolves `FUSION_GATEWAY_API_KEY` → settings.json `shell.gateway_admin_key` (the key the gateway actually accepts); `profile()` reads `FUSION_PROFILE` — dev = warn-once + `""` (`_ANON_WARNED` set), prod = fail-fast 3-part `RuntimeError` (var name + obtain-from-gateway-admin-API + doc path); `gateway_base_url()` (`FUSION_GATEWAY_BASE_URL` → legacy `FUSION_GATEWAY_URL` warns → `http://127.0.0.1:11432`); `service_port(app, default)` / `service_data_dir(app, default)` read `FUSION_<APP>_PORT` / `_DATA_DIR` with the `fusion-` prefix stripped first (issues #34/#36 — `"fusion-rag"` and `"rag"` resolve identically, never `FUSION_FUSION_RAG_PORT`), missing port hints port-registry.yaml. Domain apps must call these instead of hand-rolling `_resolve_*key` helpers (CI `scripts/check-env.py` flags bespoke ones). Since v0.11.0 (issue #47): `load_dotenv(path=None, *, override=False)` — stdlib dotenv loader (zero new deps; comments, `export` prefix, quotes, trailing inline comments, no interpolation), path resolution explicit arg → `ENV_FILE` env → no-op `{}`; default keeps existing env values, `override=True` forces the file's; missing file raises.
 
 ### `logging` — idempotent logging init
-`setup_logging`, `get_logger`. Every `setLevel` applies; `propagate` defaults True so host root still receives logs; package-level `NullHandler` for library mode. Optional JSON format.
+`setup_logging`, `get_logger`. Every `setLevel` applies; `propagate` defaults True so host root still receives logs; package-level `NullHandler` for library mode. Optional JSON format. Since v0.11.0 (issue #47): `setup_logging(max_bytes=, backup_count=3)` — with `log_file` set, `max_bytes` swaps `FileHandler` for a size-based `RotatingFileHandler` (e.g. 10MB x 3) so apps stop keeping private rotation setup.
+
+### `errors` — shared error tree (issue #47)
+`FusionError(Exception)` — base for what business apps kept as private error trees. Class-level defaults `code` ("fusion_error"), `http_status` (500), `remediation` (""); subclass sets defaults, per-raise kwargs override. Structured `context` dict copied at construction. `to_http()` returns sanitized `{"status", "code", "message", "remediation", "context"}` for API error handlers. Chain preserved by the caller via `raise ... from`.
 
 ### `http_client` — httpx pool + retry (single source of truth)
 `get_async_client` (per-event-loop connection pool, `OrderedDict` LRU cap 8, evicts only same-loop keys; tracks owning loop so `close_all_sync` can close cross-loop clients). `with_retry` — full jitter; `disable=` + `verify_gateway=` hand retry off to fusion-gateway's circuit breaker (avoids double-retry); `total_deadline=` caps the whole retry budget; exhaustion → `RetryExhaustedError` / `RetryTimeoutError`. `gateway_circuit_breaker_ok` probes gateway `/readyz`. `close_all` / `close_all_sync` / `set_metrics_callback` / `get_metrics_snapshot` / `reset_metrics`. **`RETRY_STATUS` / `RETRY_EXCEPTIONS` are the single source of truth for what gets retried** — do not duplicate retry decisions in callers.

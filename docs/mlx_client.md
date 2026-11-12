@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "mlx_client 模块", en: "mlx_client module"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
