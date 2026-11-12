@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "prompt_registry 模块", en: "prompt_registry module"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

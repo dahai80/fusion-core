@@ -183,3 +183,65 @@ class TestImportTimeIsolation:
         importlib.reload(fusion_core)
         env_reads = {k: v for k, v in captured.items()}
         assert not env_reads, f"import fusion_core triggered env reads at import time: {env_reads}"
+
+
+class TestLoadDotenv:
+    def test_no_path_no_env_file_noop(self, monkeypatch):
+        monkeypatch.delenv("ENV_FILE", raising=False)
+        assert config.load_dotenv() == {}
+
+    def test_env_file_override_resolution(self, tmp_path, monkeypatch):
+        p = tmp_path / ".env"
+        p.write_text("FUSION_DOTENV_PROBE=from_env_file\n")
+        monkeypatch.delenv("FUSION_DOTENV_PROBE", raising=False)
+        monkeypatch.setenv("ENV_FILE", str(p))
+        loaded = config.load_dotenv()
+        assert loaded == {"FUSION_DOTENV_PROBE": "from_env_file"}
+        assert os.environ["FUSION_DOTENV_PROBE"] == "from_env_file"
+        os.environ.pop("FUSION_DOTENV_PROBE", None)
+
+    def test_basic_parsing_quotes_and_comments(self, tmp_path, monkeypatch):
+        p = tmp_path / ".env"
+        p.write_text(
+            "# comment line\n"
+            "DOTENV_A=plain\n"
+            'DOTENV_B="double quoted"\n'
+            "DOTENV_C='single quoted'\n"
+            "DOTENV_D=tail # inline comment\n"
+            "export DOTENV_E=exported\n"
+            "\n"
+            "DOTENV_F=has spaces\n"
+        )
+        for k in "ABCDEF":
+            monkeypatch.delenv(f"DOTENV_{k}", raising=False)
+        loaded = config.load_dotenv(p)
+        assert loaded["DOTENV_A"] == "plain"
+        assert loaded["DOTENV_B"] == "double quoted"
+        assert loaded["DOTENV_C"] == "single quoted"
+        assert loaded["DOTENV_D"] == "tail"
+        assert loaded["DOTENV_E"] == "exported"
+        assert loaded["DOTENV_F"] == "has spaces"
+
+    def test_default_no_override_existing(self, tmp_path, monkeypatch):
+        p = tmp_path / ".env"
+        p.write_text("EXISTING_DOTENV_KEY=file_value\n")
+        monkeypatch.setenv("EXISTING_DOTENV_KEY", "env_value")
+        config.load_dotenv(p)
+        assert os.environ["EXISTING_DOTENV_KEY"] == "env_value"
+
+    def test_override_true_replaces_existing(self, tmp_path, monkeypatch):
+        p = tmp_path / ".env"
+        p.write_text("EXISTING_DOTENV_KEY=file_value\n")
+        monkeypatch.setenv("EXISTING_DOTENV_KEY", "env_value")
+        config.load_dotenv(p, override=True)
+        assert os.environ["EXISTING_DOTENV_KEY"] == "file_value"
+
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            config.load_dotenv(tmp_path / "absent.env")
+
+    def test_malformed_lines_skipped(self, tmp_path):
+        p = tmp_path / ".env"
+        p.write_text("=nokey\nNOEQUALS\nVALID_DOTENV_K=1\n")
+        loaded = config.load_dotenv(p)
+        assert loaded == {"VALID_DOTENV_K": "1"}

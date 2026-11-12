@@ -25,6 +25,7 @@ from fusion_core.config import (  # noqa: E402
     gateway_base_url,
     get_env,
     load_api_key,
+    load_dotenv,
     load_settings,
     profile,
     resolve_api_key,
@@ -36,6 +37,7 @@ from fusion_core.dsl_schema import (  # noqa: E402
     validate_dsl,
     validate_dsl_str,
 )
+from fusion_core.errors import FusionError  # noqa: E402
 from fusion_core.guard_client import (  # noqa: E402
     AllChainsVerification,
     ChainVerification,
@@ -132,6 +134,8 @@ __all__ = [
     "strip_code_fence",
     "get_env",
     "load_api_key",
+    "load_dotenv",
+    "FusionError",
     "resolve_api_key",
     "load_settings",
     "clear_cache",

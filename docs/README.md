@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "模块文档索引", en: "Module docs index"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -25,8 +25,9 @@ Per-module API reference for fusion-core. Each doc covers signatures, params, re
 | Module | Doc | One-line |
 |--------|-----|----------|
 | `parse` | [parse.md](parse.md) | LLM output JSON parsing — fail visibly, never silent |
-| `config` | [config.md](config.md) | Lazy settings load + api_key resolution + mtime-invalidated cache |
-| `logging` | [logging.md](logging.md) | Idempotent logging init, library-mode NullHandler, optional JSON |
+| `config` | [config.md](config.md) | Lazy settings load + api_key resolution + mtime-invalidated cache + dotenv loader (`ENV_FILE`, override semantics) |
+| `logging` | [logging.md](logging.md) | Idempotent logging init, library-mode NullHandler, optional JSON, size-based `RotatingFileHandler` option |
+| `errors` | [errors.md](errors.md) | Shared error tree base `FusionError` — stable `code`, `remediation` hint, `context`, `to_http()` payload |
 | `http_client` | [http_client.md](http_client.md) | httpx async connection pool + retry (single source RETRY_STATUS/RETRY_EXCEPTIONS) + metrics hook |
 | `mlx_client` | [mlx_client.md](mlx_client.md) | Unified MLX inference client — chat/embed/stream, StreamError envelope, ServerStats |
 | `http` | [http.md](http.md) | FastAPI app factory + pure-ASGI middleware (request_id, auth, 422/500 sanitize) |

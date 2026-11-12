@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "logging 模块", en: "logging module"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -20,7 +20,7 @@ Idempotent logging init. Library-mode `NullHandler`, host-root propagation prese
 
 ## Symbols
 
-- [`setup_logging(name, *, level, json_format, log_file, propagate)`](#setup_logging)
+- [`setup_logging(name, *, level, json_format, log_file, propagate, max_bytes, backup_count)`](#setup_logging)
 - [`get_logger(name)`](#get_logger)
 
 ## setup_logging
@@ -33,10 +33,16 @@ def setup_logging(
     json_format: bool = False,
     log_file: str | Path | None = None,
     propagate: bool = True,
+    max_bytes: int | None = None,
+    backup_count: int = 3,
 ) -> logging.Logger
 ```
 
-Configures logger `name`. Idempotent: if a non-`NullHandler` handler already exists, only applies `setLevel` (no duplicate handler). Otherwise removes prior `NullHandler`, adds a `StreamHandler(sys.stderr)` with the chosen formatter. Optional `log_file` adds a `FileHandler`.
+Configures logger `name`. Idempotent: if a non-`NullHandler` handler already exists, only applies `setLevel` (no duplicate handler). Otherwise removes prior `NullHandler`, adds a `StreamHandler(sys.stderr)` with the chosen formatter. Optional `log_file` adds a `FileHandler` — or a `RotatingFileHandler` when `max_bytes` is set (issue #47): size-based rotation with `backup_count` backups (`app.log`, `app.log.1`, ..., `app.log.<backup_count>`). Apps needing e.g. 10MB x 3 rotation no longer keep private setup code.
+
+```python
+setup_logging("svc", log_file="/var/log/svc/app.log", max_bytes=10 * 1024 * 1024, backup_count=3)
+```
 
 - `level` — string name (`"INFO"`, `"DEBUG"`, ...); invalid → `ValueError`.
 - `json_format=True` — `_JsonFormatter`: `{"ts","level","name","msg"}` (+`exc` if present), `ensure_ascii=False`, ISO-8601 UTC.

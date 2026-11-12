@@ -121,6 +121,62 @@ def clear_cache() -> None:
     logger.debug("config cache cleared")
 
 
+# --- dotenv env-file loading (issue #47, config-conventions §1) ---
+
+
+def _parse_dotenv_line(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    if stripped.startswith("export "):
+        stripped = stripped[len("export ") :].lstrip()
+    key, sep, value = stripped.partition("=")
+    if not sep or not key.strip() or not key.strip().replace("_", "a").replace("-", "a").isalnum():
+        logger.debug("load_dotenv: skipping malformed line: %s", line.strip()[:60])
+        return None
+    key = key.strip()
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        value = value[1:-1]
+    else:
+        # strip trailing inline comment on unquoted values
+        if " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+    return key, value
+
+
+def load_dotenv(path: str | Path | None = None, *, override: bool = False) -> dict[str, str]:
+    # Load KEY=VALUE pairs from a dotenv file into os.environ.
+    # Resolution: explicit path arg -> ENV_FILE env var -> no-op (empty dict).
+    # Default does NOT overwrite variables already set in the environment
+    # (standard dotenv semantics); override=True forces them.
+    if path is None:
+        env_file = os.environ.get("ENV_FILE", "")
+        if not env_file:
+            logger.debug("load_dotenv: no path arg and ENV_FILE unset, no-op")
+            return {}
+        path = env_file
+    p = Path(path)
+    try:
+        text = p.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.warning("load_dotenv: env file not found: %s", p)
+        raise
+    loaded: dict[str, str] = {}
+    for line in text.splitlines():
+        parsed = _parse_dotenv_line(line)
+        if parsed is None:
+            continue
+        key, value = parsed
+        if not override and os.environ.get(key, "") != "":
+            logger.debug("load_dotenv: %s already set, keeping existing value", key)
+            continue
+        os.environ[key] = value
+        loaded[key] = value
+    logger.info("load_dotenv: %d vars loaded from %s (override=%s)", len(loaded), p, override)
+    return loaded
+
+
 # --- config-conventions single-point resolution (config-conventions.md §1/§3) ---
 
 _DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:11432"

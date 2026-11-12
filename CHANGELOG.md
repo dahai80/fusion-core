@@ -7,7 +7,7 @@ doc_type: changelog
 title: {zh: "Fusion-Core 变更日志", en: "Fusion-Core Changelog"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -17,6 +17,13 @@ source_of_truth:
 # Changelog
 
 All notable changes are documented here. Format follows Keep a Changelog; versioning is semver.
+
+## [0.11.0] - 2026-11-12
+
+### Added
+- config: `load_dotenv()` — stdlib dotenv loader (zero new deps) with `ENV_FILE` resolution and standard `override=False` semantics (#47). Replaces per-app env-file loaders.
+- errors: new `FusionError` base class — stable `code`, operator-facing `remediation`, structured `context` (copied), `to_http()` sanitized API-error payload (#47). Replaces private per-app error trees.
+- logging: `setup_logging(max_bytes=, backup_count=)` — size-based `RotatingFileHandler` when `log_file` is set (e.g. 10MB x 3) (#47). Existing 0.10.x API unchanged.
 
 ## [0.10.1] - 2026-11-07
 

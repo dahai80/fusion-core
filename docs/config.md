@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "config 模块", en: "config module"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -27,6 +27,7 @@ Lazy settings load, api_key resolution, mtime-invalidated cache. No I/O at impor
 - [`resolve_api_key(explicit, *, env_var, settings_path)`](#resolve_api_key)
 - [`load_api_key(name)`](#load_api_key)
 - [`clear_cache()`](#clear_cache)
+- [`load_dotenv(path, *, override)`](#load_dotenv)
 - [`profile()`](#profile)
 - [`client_key()`](#client_key)
 - [`admin_key()`](#admin_key)
@@ -115,6 +116,28 @@ def clear_cache() -> None
 ```
 
 Clears `_SETTINGS_CACHE`. Use in tests to avoid cross-test pollution.
+
+## load_dotenv (issue #47)
+
+```python
+def load_dotenv(path: str | Path | None = None, *, override: bool = False) -> dict[str, str]
+```
+
+Loads `KEY=VALUE` pairs from a dotenv file into `os.environ` and returns the vars it actually set. Path resolution: explicit `path` arg → `ENV_FILE` env var → no-op (returns `{}`). **Zero new dependencies** — stdlib parser (comments, `export ` prefix, single/double quotes, trailing `# comment` on unquoted values); no variable interpolation.
+
+- Default does **not** overwrite variables already in the environment (standard dotenv semantics); `override=True` forces the file's value.
+- Missing file → `FileNotFoundError` (fail visibly). Malformed lines are skipped with a debug log.
+- Call-time I/O only; `import fusion_core` stays I/O-free.
+
+```python
+from fusion_core import load_dotenv
+
+load_dotenv()  # reads $ENV_FILE if set, else no-op
+load_dotenv(".env.local")  # explicit file, existing env wins
+load_dotenv(".env.local", override=True)  # file wins
+```
+
+Every business app re-implemented its own env-file loading — this replaces those private loaders.
 
 ## Design notes
 

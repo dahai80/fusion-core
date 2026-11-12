@@ -7,7 +7,7 @@ doc_type: recipe
 title: {zh: "Recipe：新服务接入配置单点解析", en: "Recipe: wire a new service to config single-point resolution"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

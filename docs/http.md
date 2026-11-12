@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "http 模块（FastAPI 工厂）", en: "http module (FastAPI factory)"}
 audience: engineer
 status: draft
-version: 0.10.1
+version: 0.11.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
