@@ -53,6 +53,13 @@ jobs:
           echo "Built artifacts:"
           ls -la dist/
 
+      - name: Upload dist artifact
+        # Hand the built distributions to the PyPI publish job (issue #52).
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -63,3 +70,27 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
+
+  publish-pypi:
+    # Publish to PyPI via Trusted Publisher (issue #52) — tokenless OIDC.
+    # One-time setup on pypi.org (Account settings -> Publishing): project
+    # "fusion-core", owner "dahai80", repository "fusion-core", workflow
+    # "release.yml", environment "pypi". Prerelease tags (rc/alpha/beta)
+    # are skipped — they only ship as GitHub prereleases.
+    name: Publish to PyPI
+    needs: release
+    if: ${{ !contains(github.ref_name, 'rc') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

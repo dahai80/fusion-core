@@ -47,7 +47,7 @@ ruff format --check .                              # verify formatting without w
 
 ## Release flow
 
-Tags matching `v*` trigger `.github/workflows/release.yml`, which builds wheel + sdist and attaches them to a GitHub Release. Before tagging, keep **4-way version consistency**: `pyproject.toml` `[project].version`, `fusion_core/__init__.py` `__version__` (resolved via `importlib.metadata`), the git tag, and the published GitHub Release must all agree. Conventional-commit scopes used historically: `feat(tenant)`, `fix(http)`, `release(vX.Y.Z)`, `style(docs)`.
+Tags matching `v*` trigger `.github/workflows/release.yml`, which builds wheel + sdist and attaches them to a GitHub Release. Since v0.12.1 (issue #52) stable tags **also publish to PyPI** via Trusted Publisher (tokenless OIDC, `environment: pypi` — one-time setup on pypi.org: project `fusion-core`, owner `dahai80`, repository `fusion-core`, workflow `release.yml`, environment `pypi`); prerelease tags (rc/alpha/beta) skip the PyPI job. Before tagging, keep **4-way version consistency**: `pyproject.toml` `[project].version`, `fusion_core/__init__.py` `__version__` (resolved via `importlib.metadata`), the git tag, and the published GitHub Release must all agree. Conventional-commit scopes used historically: `feat(tenant)`, `fix(http)`, `release(vX.Y.Z)`, `style(docs)`.
 
 ## Architecture — the 15 modules
 
