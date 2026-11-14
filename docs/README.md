@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "模块文档索引", en: "Module docs index"}
 audience: engineer
 status: draft
-version: 0.12.0
+version: 0.12.1
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

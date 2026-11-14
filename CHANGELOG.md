@@ -7,8 +7,8 @@ doc_type: changelog
 title: {zh: "Fusion-Core 变更日志", en: "Fusion-Core Changelog"}
 audience: engineer
 status: draft
-version: 0.12.0
-updated: 2026-11-12
+version: 0.12.1
+updated: 2026-11-14
 owner: "@dahai"
 source_of_truth:
   - pyproject.toml
@@ -17,6 +17,11 @@ source_of_truth:
 # Changelog
 
 All notable changes are documented here. Format follows Keep a Changelog; versioning is semver.
+
+## [0.12.1] - 2026-11-14
+
+### Changed
+- CI: `release.yml` now publishes stable tags to **PyPI** via Trusted Publisher (tokenless OIDC) — `pip install fusion-core` works outside the monorepo (#52). Prerelease tags (rc/alpha/beta) only ship as GitHub prereleases. No code change.
 
 ## [0.12.0] - 2026-11-12
 

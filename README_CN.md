@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "Fusion-Core 公共技术底座（中文）", en: "Fusion-Core shared technical foundation (Chinese)"}
 audience: engineer
 status: draft
-version: 0.12.0
+version: 0.12.1
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -28,7 +28,8 @@ fusion-core 是 Fusion 生态（"一核九端"）20+ Python 领域项目共享�
 ## 安装
 
 ```bash
-pip install -e fusion-core            # 基础（仅 httpx，核心依赖零业务、零 pydantic）
+pip install fusion-core               # 从 PyPI 安装（稳定 tag 自动发布，issue #52）
+pip install -e fusion-core            # 从 monorepo 树安装 — 基础（仅 httpx，核心依赖零业务、零 pydantic）
 pip install -e "fusion-core[test]"    # 加测试栈（pytest、ruff、fastapi、jsonschema）
 pip install -e "fusion-core[fastapi]" # 加 fastapi、uvicorn、pydantic
 pip install -e "fusion-core[schema]"  # 加 jsonschema（用于 dsl_schema 校验）

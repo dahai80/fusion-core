@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "Fusion-Core 公共技术底座", en: "Fusion-Core shared technical foundation"}
 audience: engineer
 status: draft
-version: 0.12.0
+version: 0.12.1
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -28,7 +28,8 @@ It depends on nothing Fusion-specific. `import fusion_core` triggers no I/O (no 
 ## Install
 
 ```bash
-pip install -e fusion-core            # core (httpx only; zero business deps, no pydantic)
+pip install fusion-core               # from PyPI (published automatically on stable tags, issue #52)
+pip install -e fusion-core            # from the monorepo tree — core (httpx only; zero business deps, no pydantic)
 pip install -e "fusion-core[test]"    # + test stack (pytest, ruff, fastapi, jsonschema)
 pip install -e "fusion-core[fastapi]" # + fastapi, uvicorn, pydantic
 pip install -e "fusion-core[schema]"  # + jsonschema (for dsl_schema validation)
