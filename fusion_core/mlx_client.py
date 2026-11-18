@@ -187,6 +187,7 @@ class FusionMLXClient:
         stream: bool = False,
         total_deadline: float | None = None,
         extra_body: dict | None = None,
+        code_mode: bool = False,
         **kwargs,
     ) -> LLMResponse:
         resolved = self._resolve_model(model)
@@ -212,6 +213,10 @@ class FusionMLXClient:
                 payload[key] = value
             else:
                 logger.warning("chat dropping non-allowlisted kwarg %s=%r", key, value)
+        if code_mode:
+            # fusion-mlx M10 (its PR #1642): server renders tools as Python
+            # stubs in the system message; unset = identical request as before.
+            payload["code_mode"] = True
         self._apply_extra_body(payload, extra_body)
 
         resp = await with_retry(
@@ -260,6 +265,7 @@ class FusionMLXClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         extra_body: dict | None = None,
+        code_mode: bool = False,
     ) -> AsyncIterator[str]:
         resolved = self._resolve_model(model)
         payload = {
@@ -269,6 +275,8 @@ class FusionMLXClient:
             "max_tokens": max_tokens,
             "stream": True,
         }
+        if code_mode:
+            payload["code_mode"] = True
         self._apply_extra_body(payload, extra_body)
 
         last_exc: Exception | None = None

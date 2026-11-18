@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "Fusion-Core 公共技术底座（中文）", en: "Fusion-Core shared technical foundation (Chinese)"}
 audience: engineer
 status: draft
-version: 0.12.1
+version: 0.13.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -42,7 +42,7 @@ pip install -e "fusion-core[proc]"    # 加 setproctitle（用于 set_process_ti
 
 | 模块 | 关键符号 | 用途 |
 |------|----------|------|
-| `mlx_client` | `FusionMLXClient`、`create_async_client(*, backend=)`、`LLMResponse`、`EmbeddingResponse`、`ServerStats`、`StreamError` | 统一 MLX 推理客户端（chat / embedding / stream）。默认 base_url `localhost:11434`（运行时解析 `FUSION_MLX_URL`，指向 fusion-gateway 即多节点）。重试下沉 `http_client`。`chat(total_deadline=)` 为显式命名参数（R5）传端到端预算；`**kwargs` 白名单透传（`top_p`/`seed` 等）；`stream_chat` **所有**流失败路径抛 `StreamError(delivered=, resume_offset=)`（中断 severed 或 可重试耗尽无输出），调用方只认一种流失败类型（H4/R4）；不可重试 4xx 仍抛原 `HTTPStatusError`；`create_async_client(model=...)` 记默认 model；`health()` 复用 `probe_client` + 1s 节流不泄漏主连接；`get_server_stats()` 返回 `ServerStats` dataclass。流式分块解析容忍网关终止块：`{"choices": [null]}` 或 `delta: null` 直接跳过，不再 `AttributeError`（issue #44）；`extra_body=` 原样合并引擎专属 payload 字段（浅合并，显式参数冲突时优先 — issue #49） |
+| `mlx_client` | `FusionMLXClient`、`create_async_client(*, backend=)`、`LLMResponse`、`EmbeddingResponse`、`ServerStats`、`StreamError` | 统一 MLX 推理客户端（chat / embedding / stream）。默认 base_url `localhost:11434`（运行时解析 `FUSION_MLX_URL`，指向 fusion-gateway 即多节点）。重试下沉 `http_client`。`chat(total_deadline=)` 为显式命名参数（R5）传端到端预算；`**kwargs` 白名单透传（`top_p`/`seed` 等）；`stream_chat` **所有**流失败路径抛 `StreamError(delivered=, resume_offset=)`（中断 severed 或 可重试耗尽无输出），调用方只认一种流失败类型（H4/R4）；不可重试 4xx 仍抛原 `HTTPStatusError`；`create_async_client(model=...)` 记默认 model；`health()` 复用 `probe_client` + 1s 节流不泄漏主连接；`get_server_stats()` 返回 `ServerStats` dataclass。流式分块解析容忍网关终止块：`{"choices": [null]}` 或 `delta: null` 直接跳过，不再 `AttributeError`（issue #44）；`extra_body=` 原样合并引擎专属 payload 字段（浅合并，显式参数冲突时优先 — issue #49）；`code_mode=True` 透传 fusion-mlx M10 的 code_mode 字段（服务端把工具渲染成 Python stub；不传则请求与之前完全一致 — issue #54） |
 | `parse` | `parse_llm_json`（抛 `ParseError` 不兜底）、`parse_llm_json_safe`（显式默认，default 必传 dict/list）、`parse_llm_json_lenient`（`raw_decode` 提取首个对象，扫描上限 200k）、`strip_code_fence` | LLM 输出 JSON 解析，**失败可见不静默** |
 | `config` | `load_settings`（mtime 失效缓存）、`resolve_api_key`、`load_api_key`、`get_env`、`default_mlx_base_url`、`clear_cache`、`client_key`、`admin_key`、`gateway_admin_key`、`profile`、`gateway_base_url`、`service_port`、`service_data_dir` | 配置懒加载 + api_key 解析 + 缓存失效（settings 文件 mtime 变即失效）。v0.7.0 起同时是 `architecture/config-conventions.md` 的**单点解析层**（issue #31/#32）：`client_key()` 按 `FUSION_CLIENT_KEY` → `FUSION_MLX_API_KEY` → `MLX_API_KEY` 别名链解析（旧名告警）；`admin_key()` 读 `FUSION_ADMIN_KEY`（无别名链）；`gateway_admin_key()`（issue #35）按 `FUSION_GATEWAY_API_KEY` → settings.json `shell.gateway_admin_key` 解析——gateway 实际接受的那把密钥；`profile()` 读 `FUSION_PROFILE`（dev = 告警一次 + 返回 `""`，prod = 三段式 `RuntimeError`）；`gateway_base_url()` 默认 `http://127.0.0.1:11432`；`service_port(app, default)` / `service_data_dir(app, default)` 读 `FUSION_<APP>_PORT` / `_DATA_DIR`，`fusion-` 前缀先剥掉（issue #34/#36，`"fusion-rag"` 与 `"rag"` 解析一致），报错带 port-registry 注册提示 |
 | `logging` | `setup_logging`、`get_logger` | 幂等日志初始化（每次 setLevel 生效，`propagate` 默认 True 不阻断 host root，区分包级 `NullHandler`），JSON 格式可选。`extra={}` 字段两种格式器均渲染（JSON 合并进顶层；文本追加 `key=value` — issue #50）；`root=True` 挂到 root logger 支持旧模式迁移（幂等） |
