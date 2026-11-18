@@ -595,3 +595,47 @@ class TestExtraBody:
         assert sent["payload"]["chat_template_kwargs"] == {"grammar": "g"}
         assert sent["payload"]["stream"] is True
         await client.close()
+
+
+class TestCodeMode:
+    # issue #54: fusion-mlx M10 code_mode field passthrough.
+
+    async def test_code_mode_true_round_trips(self):
+        sent = {}
+
+        def handler(request):
+            sent["payload"] = json.loads(request.content)
+            return _chat_handler(request)
+
+        client = _make_client(handler, max_retries=0)
+        await client.chat(model="test-model", messages=[{"role": "user", "content": "x"}], code_mode=True)
+        assert sent["payload"]["code_mode"] is True
+        await client.close()
+
+    async def test_code_mode_unset_identical_request(self):
+        sent = {}
+
+        def handler(request):
+            sent["payload"] = json.loads(request.content)
+            return _chat_handler(request)
+
+        client = _make_client(handler, max_retries=0)
+        await client.chat(model="test-model", messages=[{"role": "user", "content": "x"}])
+        assert "code_mode" not in sent["payload"]
+        await client.close()
+
+    async def test_code_mode_stream_round_trips(self):
+        sse = 'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\ndata: [DONE]\n\n'
+        sent = {}
+
+        def handler(request):
+            sent["payload"] = json.loads(request.content)
+            return httpx.Response(200, content=sse.encode(), headers={"content-type": "text/event-stream"})
+
+        client = _make_client(handler)
+        chunks = []
+        async for c in client.stream_chat(model="m", messages=[{"role": "user", "content": "x"}], code_mode=True):
+            chunks.append(c)
+        assert "".join(chunks) == "Hi"
+        assert sent["payload"]["code_mode"] is True
+        await client.close()

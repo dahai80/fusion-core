@@ -7,8 +7,8 @@ doc_type: api-reference
 title: {zh: "mlx_client 模块", en: "mlx_client module"}
 audience: engineer
 status: draft
-version: 0.12.1
-updated: 2026-11-14
+version: 0.13.0
+updated: 2026-11-18
 owner: "@dahai"
 source_of_truth:
   - fusion_core/mlx_client.py
@@ -108,6 +108,7 @@ async def chat(
     stream: bool = False,
     total_deadline: float | None = None,
     extra_body: dict | None = None,
+    code_mode: bool = False,
     **kwargs,
 ) -> LLMResponse
 ```
@@ -139,11 +140,15 @@ Shortcut: `chat(...).content`. `total_deadline` forwarded to `chat` (R5).
 
 ```python
 async def stream_chat(
-    self, messages, model=None, temperature=0.7, max_tokens=4096, extra_body: dict | None = None
+    self, messages, model=None, temperature=0.7, max_tokens=4096, extra_body: dict | None = None, code_mode: bool = False
 ) -> AsyncIterator[str]
 ```
 
-`extra_body` behaves identically to `chat` (issue #49) — merged into the streaming request payload after `stream: True`.
+`extra_body` behaves identically to `chat` (issue #49) — merged into the streaming request payload after `stream: True`. `code_mode` also passes through (issue #54).
+
+### code_mode
+
+`code_mode=True` adds `"code_mode": true` to the request body (issue #54) — fusion-mlx M10 (its PR #1642) then renders tools as Python stubs in the system message and the model replies with a ` ```python ` block. Pure passthrough: all code-mode logic (parsing, stub rendering, permission checks, execution) lives in fusion-harness / fusion-executor; fusion-core stays a thin client. Unset (`False`, default) = identical request as before.
 
 SSE streaming. Yields `delta.content` chunks. Pre-output retriable failures (`RETRY_STATUS` / `RETRY_EXCEPTIONS`, `attempt < max_retries`, `not yielded`) retry. All non-retried failure paths surface as `StreamError` (H4/R4 — see [StreamError](#streamerror)): partial-output failure → `StreamError(delivered=yielded)`; retriable-but-exhausted-no-output → `StreamError(delivered=0)`. Only non-retriable 4xx re-raise the original `HTTPStatusError`.
 

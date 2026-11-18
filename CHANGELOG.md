@@ -7,8 +7,8 @@ doc_type: changelog
 title: {zh: "Fusion-Core 变更日志", en: "Fusion-Core Changelog"}
 audience: engineer
 status: draft
-version: 0.12.1
-updated: 2026-11-14
+version: 0.13.0
+updated: 2026-11-18
 owner: "@dahai"
 source_of_truth:
   - pyproject.toml
@@ -17,6 +17,11 @@ source_of_truth:
 # Changelog
 
 All notable changes are documented here. Format follows Keep a Changelog; versioning is semver.
+
+## [0.13.0] - 2026-11-18
+
+### Added
+- mlx_client: `chat(..., code_mode=True)` / `stream_chat(..., code_mode=True)` — passes the fusion-mlx M10 `code_mode` request field through (server renders tools as Python stubs in the system message). Pure passthrough — no code-mode logic in fusion-core; unset means identical requests as before (#54).
 
 ## [0.12.1] - 2026-11-14
 

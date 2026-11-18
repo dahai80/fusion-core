@@ -7,8 +7,8 @@ doc_type: api-reference
 title: {zh: "errors 模块", en: "errors module"}
 audience: engineer
 status: draft
-version: 0.12.1
-updated: 2026-11-14
+version: 0.13.0
+updated: 2026-11-18
 owner: "@dahai"
 source_of_truth:
   - fusion_core/errors.py
