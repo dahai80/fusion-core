@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "config 模块", en: "config module"}
 audience: engineer
 status: draft
-version: 0.13.0
+version: 0.14.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

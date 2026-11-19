@@ -7,8 +7,8 @@ doc_type: api-reference
 title: {zh: "mlx_client 模块", en: "mlx_client module"}
 audience: engineer
 status: draft
-version: 0.13.0
-updated: 2026-11-18
+version: 0.14.0
+updated: 2026-11-19
 owner: "@dahai"
 source_of_truth:
   - fusion_core/mlx_client.py

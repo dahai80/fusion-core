@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "parse 模块", en: "parse module"}
 audience: engineer
 status: draft
-version: 0.13.0
+version: 0.14.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:

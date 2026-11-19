@@ -7,8 +7,8 @@ doc_type: api-reference
 title: {zh: "logging 模块", en: "logging module"}
 audience: engineer
 status: draft
-version: 0.13.0
-updated: 2026-11-18
+version: 0.14.0
+updated: 2026-11-19
 owner: "@dahai"
 source_of_truth:
   - fusion_core/logging.py
