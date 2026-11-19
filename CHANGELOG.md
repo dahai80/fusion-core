@@ -7,7 +7,7 @@ doc_type: changelog
 title: {zh: "Fusion-Core 变更日志", en: "Fusion-Core Changelog"}
 audience: engineer
 status: draft
-version: 0.14.0
+version: 0.15.0
 updated: 2026-11-19
 owner: "@dahai"
 source_of_truth:
@@ -17,6 +17,14 @@ source_of_truth:
 # Changelog
 
 All notable changes are documented here. Format follows Keep a Changelog; versioning is semver.
+
+## [0.15.0] - 2026-11-19
+
+### Changed
+- ops: emitter retargeted to schema v1 `public.ops_events` (issue #58, dahai80/fusion-ops migrations 0001+0002) — no longer writes the legacy `fusion_ops` schema. `status` is INTEGER (numeric strings coerced, junk → NULL + warning), `tenant_hash` defaults to `""` (NOT NULL), `source` is CHECK-validated (`gateway`/`identity`/`commerce`/`cowork`/`autotest`/`support`/`ops`) — invalid constructor source raises `ValueError`, invalid per-event override warns and falls back. Emitter never self-provisions DDL; provisioning is owned by fusion-ops.
+
+### Added
+- ops: backpressure drops (queue-full + flush-failure) are reported into schema-v1 `drop_counters` (`source`, `bucket_day`, `dropped` upsert) after the next successful flush — best-effort, failed reports stay pending — so the fusion-ops monthly rollup sees silent losses.
 
 ## [0.14.0] - 2026-11-19
 

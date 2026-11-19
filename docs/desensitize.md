@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "desensitize 模块", en: "desensitize module"}
 audience: engineer
 status: draft
-version: 0.14.0
+version: 0.15.0
 updated: 2026-11-19
 owner: "@dahai"
 source_of_truth:

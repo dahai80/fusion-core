@@ -11,22 +11,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# ops_events schema per architecture/fusion-flywheel-1119.md §2:
-# id BIGSERIAL, ts, source, tenant_hash, event_type, latency_ms, status, payload JSONB.
+# Schema v1 (authoritative, dahai80/fusion-ops migrations/0001+0002, issue #58):
+# public.ops_events — ts, source, tenant_hash, event_type, latency_ms,
+# status INTEGER, payload JSONB. Provisioned by fusion-ops; the emitter
+# never self-provisions DDL. Source is CHECK-constrained by the schema.
 _EVENT_COLUMNS = ("ts", "source", "tenant_hash", "event_type", "latency_ms", "status", "payload")
-
-_DDL = """
-CREATE TABLE IF NOT EXISTS fusion_ops.ops_events (
-    id BIGSERIAL PRIMARY KEY,
-    ts TIMESTAMPTZ NOT NULL DEFAULT now(),
-    source TEXT NOT NULL,
-    tenant_hash TEXT,
-    event_type TEXT NOT NULL,
-    latency_ms INTEGER,
-    status TEXT,
-    payload JSONB
-)
-"""
+_ALLOWED_SOURCES = frozenset({"gateway", "identity", "commerce", "cowork", "autotest", "support", "ops"})
+_DROP_UPSERT = """
+INSERT INTO drop_counters (source, bucket_day, dropped)
+VALUES ($1, $2, $3)
+ON CONFLICT (source, bucket_day) DO UPDATE SET dropped = drop_counters.dropped + EXCLUDED.dropped
+""".strip()
 
 
 class OpsEmitterDependencyError(RuntimeError):
@@ -46,10 +41,13 @@ class EmitterStats:
 
 
 class OpsEmitter:
-    # Async batched writer to PG fusion_ops.ops_events (issue #56, flywheel Loop A).
+    # Async batched writer to PG public.ops_events (issue #56 flywheel Loop A,
+    # schema v1 per issue #58 / fusion-ops migrations 0001+0002).
     # Backpressure contract: emit() NEVER blocks the caller — on a full queue the
     # event is dropped and counted (spec §2: backpressure 时丢弃计数不阻塞业务).
     # Flush failures drop the batch, count it, and reconnect with jittered backoff.
+    # Drops (queue-full and flush-failure) are also reported into the schema-v1
+    # drop_counters table so the fusion-ops monthly rollup sees silent losses.
     def __init__(
         self,
         dsn: str,
@@ -64,6 +62,11 @@ class OpsEmitter:
             raise ValueError("batch_size must be >= 1")
         if flush_interval <= 0:
             raise ValueError("flush_interval must be > 0")
+        if source not in _ALLOWED_SOURCES:
+            raise ValueError(
+                f"source {source!r} violates the ops_events source CHECK constraint "
+                f"(allowed: {sorted(_ALLOWED_SOURCES)})"
+            )
         self._dsn = dsn
         self._source = source
         self._batch_size = batch_size
@@ -72,6 +75,7 @@ class OpsEmitter:
         self._connect = connect  # test hook: async callable returning a connection
         self._task: asyncio.Task | None = None
         self._stopping = False
+        self._pending_drops = 0  # drops awaiting the next drop_counters upsert
         self.stats = EmitterStats()
 
     async def start(self) -> None:
@@ -93,25 +97,30 @@ class OpsEmitter:
         # Never raises, never awaits on a full queue (backpressure = drop, issue #56).
         if self._stopping:
             self.stats.dropped += 1
+            self._pending_drops += 1
             return False
         try:
             self._queue.put_nowait(event)
             self.stats.emitted += 1
             return True
         except asyncio.QueueFull:
-            self.stats.dropped += 1
-            # Throttle drop logs: 1-in-100 plus the first drop, keeps caller logs sane.
-            if self.stats.dropped == 1 or self.stats.dropped % 100 == 0:
-                logger.warning(
-                    "OpsEmitter queue full, dropped=%d total (source=%s) — consumer slower than producer",
-                    self.stats.dropped,
-                    self._source,
-                )
+            self._count_drop()
             return False
+
+    def _count_drop(self) -> None:
+        # Throttle drop logs: 1-in-100 plus the first drop, keeps caller logs sane.
+        self.stats.dropped += 1
+        self._pending_drops += 1
+        if self.stats.dropped == 1 or self.stats.dropped % 100 == 0:
+            logger.warning(
+                "OpsEmitter queue full, dropped=%d total (source=%s) — consumer slower than producer",
+                self.stats.dropped,
+                self._source,
+            )
 
     async def stop(self) -> None:
         # Signal the worker, then wait. Worker drains the queue, does a final flush,
-        # and exits. Max latency = flush_interval (remaining events are drained first).
+        # reports pending drops, and exits. Max latency = flush_interval.
         self._stopping = True
         if self._task is not None:
             try:
@@ -134,20 +143,53 @@ class OpsEmitter:
         return await asyncpg.connect(self._dsn)
 
     @staticmethod
+    def _coerce_status(value: Any) -> int | None:
+        # Schema v1: status INTEGER. Non-numeric values become NULL (logged),
+        # never a failed COPY batch — one bad event must not drop 99 good ones.
+        if value is None or isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                logger.warning("OpsEmitter status %r is not numeric, storing NULL", value)
+                return None
+        logger.warning("OpsEmitter status %r has unsupported type %s, storing NULL", value, type(value).__name__)
+        return None
+
+    @staticmethod
     def _to_row(event: dict, source_default: str) -> tuple:
         payload = event.get("payload", {})
         if not isinstance(payload, str):
             payload = json.dumps(payload, ensure_ascii=False, default=str)
         ts = event.get("ts") or datetime.now(UTC)
+        source = event.get("source") or source_default
+        if source not in _ALLOWED_SOURCES:
+            logger.warning("OpsEmitter event source %r not in schema CHECK set, using %r", source, source_default)
+            source = source_default
         return (
             ts,
-            event.get("source") or source_default,
-            event.get("tenant_hash"),
+            source,
+            event.get("tenant_hash") or "",
             event.get("event_type") or "unknown",
             event.get("latency_ms"),
-            event.get("status"),
-            payload,
+            OpsEmitter._coerce_status(event.get("status")),
+            payload or "{}",
         )
+
+    async def _report_drops(self, conn) -> None:
+        # Flush pending backpressure drops into schema-v1 drop_counters so the
+        # fusion-ops monthly rollup sees silent losses. Best-effort: failure
+        # keeps the counter pending for the next successful cycle.
+        if self._pending_drops <= 0:
+            return
+        count = self._pending_drops
+        try:
+            await conn.execute(_DROP_UPSERT, self._source, datetime.now(UTC).date(), count)
+            self._pending_drops = 0
+            logger.debug("OpsEmitter reported %d drops to drop_counters (source=%s)", count, self._source)
+        except Exception:
+            logger.warning("OpsEmitter drop_counters report failed, %d drops stay pending", count)
 
     async def _run(self) -> None:
         conn = None
@@ -162,6 +204,7 @@ class OpsEmitter:
             except TimeoutError:
                 if self._stopping and self._queue.empty() and not batch:
                     if conn is not None:
+                        await self._report_drops(conn)
                         await conn.close()
                     logger.debug("OpsEmitter worker exiting cleanly, stats=%s", self.stats)
                     return
@@ -171,16 +214,16 @@ class OpsEmitter:
                 if conn is None:
                     conn = await self._connect_db()
                     backoff = 1.0
-                await conn.copy_records_to_table(
-                    "ops_events", records=batch, columns=_EVENT_COLUMNS, schema_name="fusion_ops"
-                )
+                await conn.copy_records_to_table("ops_events", records=batch, columns=_EVENT_COLUMNS, schema_name=None)
                 self.stats.flushed += len(batch)
                 logger.debug("OpsEmitter flushed %d events (total flushed=%d)", len(batch), self.stats.flushed)
                 batch.clear()
+                await self._report_drops(conn)
             except Exception:
                 # Spec contract: never crash, never block — drop the batch, count it,
                 # reconnect with jittered backoff (issue #56 acceptance: kill PG mid-run).
                 self.stats.dropped += len(batch)
+                self._pending_drops += len(batch)
                 logger.exception(
                     "OpsEmitter flush failed, dropped %d events (total dropped=%d), reconnecting",
                     len(batch),

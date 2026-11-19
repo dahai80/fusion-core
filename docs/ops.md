@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "ops 模块", en: "ops module"}
 audience: engineer
 status: draft
-version: 0.14.0
+version: 0.15.0
 updated: 2026-11-19
 owner: "@dahai"
 source_of_truth:
@@ -38,11 +38,19 @@ OpsEmitter(
 )
 ```
 
-Async batched writer to PG `fusion_ops.ops_events`. `start()` spawns the worker task; `emit()` enqueues; `stop()` drains, final-flushes, exits.
+Async batched writer to PG `public.ops_events` (schema v1, dahai80/fusion-ops migrations 0001+0002 — issue #58). `source` must satisfy the schema CHECK constraint (`gateway` / `identity` / `commerce` / `cowork` / `autotest` / `support` / `ops`) and is validated at construction (`ValueError` otherwise). `start()` spawns the worker task; `emit()` enqueues; `stop()` drains, final-flushes, reports pending drops, exits.
 
 ### Backpressure contract (spec §2 — 禁止阻塞业务)
 
 `emit()` **never blocks and never raises**. On a full queue the event is dropped and counted (`stats.dropped`); drop logs are throttled (first drop + every 100th). On flush failure the whole batch is dropped, counted, the connection closed, and reconnect happens with jittered exponential backoff (0.5-1.5s × 2^n, cap 30s). PG dying mid-run = drops counted + reconnects, never a crash in the caller.
+
+Drops (queue-full and flush-failure) are reported into the schema-v1 `drop_counters` table (`source`, `bucket_day`, `dropped` upsert) after the next successful flush — so the fusion-ops monthly rollup sees silent losses. Reporting is best-effort: a failed report keeps the counter pending and retries on the next cycle; it never crashes the worker or blocks the caller.
+
+### Event field coercion (schema v1)
+
+- `status` — INTEGER in schema v1. Numeric strings are coerced (`"201"` → `201`); non-numeric values become NULL with a warning (one bad event never fails a COPY batch).
+- `tenant_hash` — NOT NULL in schema v1; missing value defaults to `""`.
+- `source` — per-event override is checked against the schema CHECK set; an invalid override logs a warning and falls back to the emitter's source.
 
 ### Methods
 
@@ -53,25 +61,14 @@ Async batched writer to PG `fusion_ops.ops_events`. `start()` spawns the worker 
 
 ### Table schema
 
-```sql
-CREATE TABLE IF NOT EXISTS fusion_ops.ops_events (
-    id BIGSERIAL PRIMARY KEY,
-    ts TIMESTAMPTZ NOT NULL DEFAULT now(),
-    source TEXT NOT NULL,
-    tenant_hash TEXT,
-    event_type TEXT NOT NULL,
-    latency_ms INTEGER,
-    status TEXT,
-    payload JSONB
-)
-```
+Authoritative DDL lives in dahai80/fusion-ops (`migrations/0001_schema_v1.sql` + `0002_ops_source.sql`); the emitter never self-provisions. Target: `public.ops_events` — `status INTEGER`, `tenant_hash NOT NULL DEFAULT ''`, `payload JSONB NOT NULL DEFAULT '{}'`, `source` CHECK-constrained. Companion table `public.drop_counters` (`source`, `bucket_day`, `dropped`, UNIQUE(source, bucket_day)) receives backpressure drop reports.
 
 ```python
 from fusion_core import OpsEmitter
 
 emitter = OpsEmitter("postgres://ops@localhost:5432/fusion_ops", source="gateway", batch_size=200)
 await emitter.start()
-await emitter.emit({"event_type": "chat", "latency_ms": 42, "status": "ok", "payload": {"model": "qwen"}})
+await emitter.emit({"event_type": "chat", "latency_ms": 42, "status": 200, "payload": {"model": "qwen"}})
 ...
 await emitter.stop()
 ```

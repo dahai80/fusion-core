@@ -7,7 +7,7 @@ doc_type: architecture
 title: {zh: "Fusion-Core 架构", en: "Fusion-Core Architecture"}
 audience: engineer
 status: draft
-version: 0.14.0
+version: 0.15.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
