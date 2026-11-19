@@ -32,6 +32,7 @@ from fusion_core.config import (  # noqa: E402
     service_data_dir,
     service_port,
 )
+from fusion_core.desensitize import DesensitizeResult, desensitize, pii_classes  # noqa: E402
 from fusion_core.dsl_schema import (  # noqa: E402
     SOCRATIC_DSL_V3_SCHEMA,
     validate_dsl,
@@ -86,6 +87,7 @@ from fusion_core.mlx_client import (  # noqa: E402
     LLMResponse,
     create_async_client,
 )
+from fusion_core.ops import EmitterStats, OpsEmitter, OpsEmitterDependencyError  # noqa: E402
 from fusion_core.parse import (  # noqa: E402
     ParseError,
     parse_llm_json,
@@ -174,6 +176,12 @@ __all__ = [
     "get_metrics_snapshot",
     "reset_metrics",
     "PromptManager",
+    "OpsEmitter",
+    "OpsEmitterDependencyError",
+    "EmitterStats",
+    "desensitize",
+    "pii_classes",
+    "DesensitizeResult",
     "set_process_title",
     "PromptVersionRegistry",
     "PromptVersionRecord",

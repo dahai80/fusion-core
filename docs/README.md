@@ -7,7 +7,7 @@ doc_type: readme
 title: {zh: "模块文档索引", en: "Module docs index"}
 audience: engineer
 status: draft
-version: 0.13.0
+version: 0.14.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
@@ -34,6 +34,8 @@ Per-module API reference for fusion-core. Each doc covers signatures, params, re
 | `prompt` | [prompt.md](prompt.md) | Prompt template management — permanent cache, `{{var}}` render |
 | `guard_client` | [guard_client.md](guard_client.md) | Pure-Python UDS JSON-RPC client for fusion-guard — zero-trust authorization, typed verdicts/errors |
 | `tenant` | [tenant.md](tenant.md) | L1 multi-tenant fabric — TenantContext over contextvars, fail-closed ASGI middleware, JWT-less claims decode |
+| `ops` | [ops.md](ops.md) | Async batched ops-event emitter to PG `fusion_ops.ops_events` — drop-don't-block backpressure, reconnect with jitter |
+| `desensitize` | [desensitize.md](desensitize.md) | PII/secret masking toolkit v1 — email/phone/idcard/secret/cc(Luhn)/IP masks, identity hash tokens, hard-deny list |
 
 ## Conventions
 

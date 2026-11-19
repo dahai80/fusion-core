@@ -7,8 +7,8 @@ doc_type: changelog
 title: {zh: "Fusion-Core 变更日志", en: "Fusion-Core Changelog"}
 audience: engineer
 status: draft
-version: 0.13.0
-updated: 2026-11-18
+version: 0.14.0
+updated: 2026-11-19
 owner: "@dahai"
 source_of_truth:
   - pyproject.toml
@@ -17,6 +17,12 @@ source_of_truth:
 # Changelog
 
 All notable changes are documented here. Format follows Keep a Changelog; versioning is semver.
+
+## [0.14.0] - 2026-11-19
+
+### Added
+- ops: new module — `OpsEmitter`, the shared async batched writer to PG `fusion_ops.ops_events` (flywheel Loop A, issue #56). `emit()` never blocks the caller: full queue = drop + throttled drop-counter; flush failure = batch drop + reconnect with jittered exponential backoff. Batch size / flush interval / queue cap configurable. `asyncpg` lazy-imported via the new `[ops]` extra (import stays I/O-free).
+- desensitize: new module — masking toolkit v1 (issue #56). Email/phone/idcard/secret (jwt, `sk-`, hex/base64 ≥32)/credit-card (Luhn-validated)/IP masks; credential-bearing URL stripping; username/tenant → 8-char sha256 hash tokens; `pii_classes()` detection consistent with masks; hard-deny list (raw password/session-token/captcha values) fails the whole sample.
 
 ## [0.13.0] - 2026-11-18
 

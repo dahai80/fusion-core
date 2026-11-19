@@ -7,7 +7,7 @@ doc_type: api-reference
 title: {zh: "Fusion-Core API 参考", en: "Fusion-Core API Reference"}
 audience: engineer
 status: draft
-version: 0.13.0
+version: 0.14.0
 updated: 2026-11-07
 owner: "@dahai"
 source_of_truth:
